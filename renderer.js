@@ -398,15 +398,21 @@ async function startTracking() {
 async function stopTracking() {
   if (camera) camera.stop();
   isTracking = false;
-  cursorX = null;
-  cursorY = null;
-  pendingMove = false;
-  updateStatus(statusElements.eye, 'Stopped', '#a0a0a0');
-  updateStatus(statusElements.calibration, 'Not Set', '#a0a0a0');
+  updateStatus(statusElements.eye, 'Tracking Stopped', '#a0a0a0');
   if (buttons.start) buttons.start.disabled = false;
   if (buttons.stop) buttons.stop.disabled = true;
   if (buttons.recenter) buttons.recenter.disabled = true;
   if (buttons.toggleVideo) buttons.toggleVideo.disabled = true;
+
+  // Hide camera view when tracking stops
+  videoVisible = false;
+  const videoContainer = document.getElementById('video-container');
+  if (videoContainer) videoContainer.classList.remove('visible');
+
+  // Stop speech mode if active
+  if (isSpeechActive) {
+    await stopSpeech();
+  }
 }
 
 function recenter() {
