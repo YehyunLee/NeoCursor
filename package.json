@@ -34,7 +34,6 @@
   },
   "dependencies": {
     "express": "^5.2.1",
-    "robotjs": "^0.7.0",
-    "webgazer": "^3.5.3"
+    "robotjs": "^0.7.0"
   }
 }

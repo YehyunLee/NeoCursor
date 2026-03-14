@@ -91,13 +91,17 @@ function initializeGazeTracking() {
   GazeCloudAPI.UseClickRecalibration = true;
 }
 
-function startTracking() {
+async function startTracking() {
   if (typeof GazeCloudAPI === 'undefined') {
     updateStatus(statusElements.eye, 'API not loaded', '#e94560');
     return;
   }
 
   updateStatus(statusElements.eye, 'Starting...', '#f39c12');
+  
+  // Enter fullscreen for better calibration accuracy
+  await window.electronAPI.setFullscreen(true);
+  
   GazeCloudAPI.StartEyeTracking();
   isTracking = true;
   
@@ -105,12 +109,15 @@ function startTracking() {
   if (buttons.stop) buttons.stop.disabled = false;
 }
 
-function stopTracking() {
+async function stopTracking() {
   if (typeof GazeCloudAPI === 'undefined') return;
   
   GazeCloudAPI.StopEyeTracking();
   isTracking = false;
   isCalibrated = false;
+  
+  // Exit fullscreen
+  await window.electronAPI.setFullscreen(false);
   
   updateStatus(statusElements.eye, 'Stopped', '#a0a0a0');
   updateStatus(statusElements.calibration, 'Not Calibrated', '#a0a0a0');

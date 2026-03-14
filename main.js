@@ -75,6 +75,17 @@ ipcMain.handle('mouse-click', async (event, { button = 'left' }) => {
   }
 });
 
+// IPC handler for fullscreen control
+ipcMain.handle('set-fullscreen', async (event, { fullscreen }) => {
+  try {
+    mainWindow.setFullScreen(fullscreen);
+    return { success: true };
+  } catch (error) {
+    console.error('Error setting fullscreen:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 app.whenReady().then(() => {
   createWindow();
 
