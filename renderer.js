@@ -139,27 +139,45 @@ function highlightCurrentPoint() {
 }
 
 function handleCalibrationClick(pointId) {
+  console.log('handleCalibrationClick called with pointId:', pointId);
+  console.log('Current calibration index:', currentCalibrationIndex);
+  
   const point = calibrationPoints.find(p => p.id === pointId);
-  if (!point || point.completed) return;
+  console.log('Found point:', point);
+  
+  if (!point) {
+    console.error('Point not found!');
+    return;
+  }
+  
+  if (point.completed) {
+    console.log('Point already completed');
+    return;
+  }
   
   // Only allow clicking the current point
   if (pointId !== currentCalibrationIndex) {
+    console.log('Wrong point clicked. Expected:', currentCalibrationIndex, 'Got:', pointId);
     return;
   }
   
   point.clicks++;
+  console.log('Point clicks:', point.clicks, '/', clicksPerPoint);
   
   const pointEl = document.getElementById(`cal-point-${pointId}`);
   
   if (point.clicks >= clicksPerPoint) {
+    console.log('Point completed!');
     point.completed = true;
     pointEl.classList.add('completed');
     currentCalibrationIndex++;
     
     if (currentCalibrationIndex < calibrationPoints.length) {
+      console.log('Moving to next point:', currentCalibrationIndex);
       highlightCurrentPoint();
       updateCalibrationProgress();
     } else {
+      console.log('All points completed!');
       completeCalibration();
     }
   } else {
