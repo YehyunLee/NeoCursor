@@ -14,12 +14,18 @@ app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 
-try {
-  robot = require('robotjs');
-  console.log('Using robotjs for mouse control');
-} catch (error) {
-  console.warn('robotjs not available, using OS-specific fallback');
+// robotjs causes SIGBUS crash on some macOS systems, use native control instead
+if (process.platform === 'darwin') {
+  console.warn('Using native macOS control (robotjs disabled due to compatibility issues)');
   useNativeControl = true;
+} else {
+  try {
+    robot = require('robotjs');
+    console.log('Using robotjs for mouse control');
+  } catch (error) {
+    console.warn('robotjs not available, using OS-specific fallback');
+    useNativeControl = true;
+  }
 }
 
 // Persistent helper process for fast cursor control without robotjs
@@ -285,9 +291,18 @@ app.whenReady().then(() => {
     // Type the transcribed text using robotjs or native control
     try {
       if (useNativeControl) {
-        // For native control, we'd need to implement typing via AppleScript/xdotool
-        // For now, just log it
-        console.log('[Speech] Would type:', text);
+        if (process.platform === 'darwin') {
+          // Use AppleScript to type on macOS
+          const escapedText = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+          spawn('osascript', ['-e', `tell application "System Events" to keystroke "${escapedText}"`]);
+          console.log('[Speech] Typed via AppleScript:', text);
+        } else if (process.platform === 'linux') {
+          // Use xdotool to type on Linux
+          spawn('xdotool', ['type', '--', text]);
+          console.log('[Speech] Typed via xdotool:', text);
+        } else {
+          console.log('[Speech] Would type:', text);
+        }
       } else if (robot) {
         robot.typeString(text);
       }
