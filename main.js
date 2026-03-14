@@ -15,18 +15,12 @@ app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 
-// robotjs causes SIGBUS crash on some macOS systems, use native control instead
-if (process.platform === 'darwin') {
-  console.warn('Using native macOS control (robotjs disabled due to compatibility issues)');
+try {
+  robot = require('robotjs');
+  console.log('Using robotjs for mouse control');
+} catch (error) {
+  console.warn('robotjs not available, using OS-specific fallback');
   useNativeControl = true;
-} else {
-  try {
-    robot = require('robotjs');
-    console.log('Using robotjs for mouse control');
-  } catch (error) {
-    console.warn('robotjs not available, using OS-specific fallback');
-    useNativeControl = true;
-  }
 }
 
 // Persistent helper process for fast cursor control without robotjs
