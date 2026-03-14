@@ -1,0 +1,103 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Magnifier</title>
+  <style>
+    :root {
+      --size: 160px;
+      --radius: calc(var(--size) / 2);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      width: var(--size);
+      height: var(--size);
+      overflow: hidden;
+      background: transparent;
+    }
+
+    canvas {
+      width: var(--size);
+      height: var(--size);
+      display: block;
+    }
+
+    .lens {
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: var(--size);
+      height: var(--size);
+      border-radius: 50%;
+      border: 3px solid rgba(78, 204, 163, 0.9);
+      box-shadow: 0 0 30px rgba(78, 204, 163, 0.45), inset 0 0 30px rgba(0, 0, 0, 0.45);
+      pointer-events: none;
+      background: radial-gradient(circle at center, rgba(255,255,255,0.18) 0%, rgba(255,255,255,0.1) 40%, rgba(0,0,0,0.05) 65%, transparent 75%);
+    }
+
+    .lens::before,
+    .lens::after {
+      content: '';
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      background: rgba(78, 204, 163, 0.7);
+      transform: translate(-50%, -50%);
+      border-radius: 1px;
+    }
+
+    .lens::before {
+      width: 2px;
+      height: 26px;
+    }
+
+    .lens::after {
+      width: 26px;
+      height: 2px;
+    }
+  </style>
+</head>
+<body>
+  <canvas id="magnifier-canvas" width="160" height="160"></canvas>
+  <div class="lens"></div>
+
+  <script>
+    const { ipcRenderer } = require('electron');
+
+    const canvas = document.getElementById('magnifier-canvas');
+    const ctx = canvas.getContext('2d');
+
+    let zoom = 2.4;
+    let radius = 80;
+
+    ipcRenderer.on('magnifier-config', (_event, config) => {
+      zoom = config.zoom || zoom;
+      radius = config.radius || radius;
+      document.documentElement.style.setProperty('--size', `${radius * 2}px`);
+      document.documentElement.style.setProperty('--radius', `${radius}px`);
+      canvas.width = radius * 2;
+      canvas.height = radius * 2;
+    });
+
+    ipcRenderer.on('magnifier-render', (_event, dataUrl) => {
+      if (!dataUrl) return;
+      const img = new Image();
+      img.onload = () => {
+        const diameter = radius * 2;
+        ctx.clearRect(0, 0, diameter, diameter);
+        ctx.save();
+        ctx.beginPath();
+        ctx.arc(radius, radius, radius - 3, 0, Math.PI * 2);
+        ctx.closePath();
+        ctx.clip();
+        ctx.drawImage(img, 0, 0, diameter, diameter);
+        ctx.restore();
+      };
+      img.src = dataUrl;
+    });
+  </script>
+</body>
+</html>

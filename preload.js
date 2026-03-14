@@ -8,5 +8,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   vsrStartRecording: () => ipcRenderer.invoke('vsr-start-recording'),
   vsrAddFrame: (frameData) => ipcRenderer.invoke('vsr-add-frame', { frameData }),
   vsrStopRecording: () => ipcRenderer.invoke('vsr-stop-recording'),
-  onToggleVSRRecording: (callback) => ipcRenderer.on('toggle-vsr-recording', callback)
+  onToggleVSRRecording: (callback) => ipcRenderer.on('toggle-vsr-recording', callback),
+  magnifierShow: (x, y) => ipcRenderer.invoke('magnifier-show', { x, y }),
+  magnifierHide: () => ipcRenderer.invoke('magnifier-hide'),
+  magnifierMove: (x, y) => ipcRenderer.invoke('magnifier-move', { x, y })
 });

@@ -9,6 +9,9 @@ let vsrFrameCount = 0;
 const VSR_FPS = 16;
 const VSR_FRAME_INTERVAL = 1000 / VSR_FPS;
 
+// Magnifier lens state
+let magnifierEnabled = false;
+
 // Head tracking + stability state
 let centerPoint = null;
 let sensitivity = 15;
@@ -57,7 +60,7 @@ function accelerate(delta) {
 }
 
 const statusElements = { eye: null, speech: null, calibration: null, click: null };
-const buttons = { start: null, stop: null, recenter: null, toggleVideo: null };
+const buttons = { start: null, stop: null, recenter: null, toggleVideo: null, toggleMagnifier: null };
 
 let faceMesh, camera, videoElement, canvasElement, canvasCtx;
 
@@ -202,6 +205,11 @@ function moveCursor(deltaX, deltaY) {
 
   const smoothed = smoothCoordinates(targetX, targetY);
 
+  // Update magnifier position if enabled
+  if (magnifierEnabled) {
+    updateMagnifierPosition(smoothed.x, smoothed.y);
+  }
+
   pendingMove = true;
   window.electronAPI.moveCursor(smoothed.x, smoothed.y).then((r) => {
     pendingMove = false;
@@ -311,10 +319,14 @@ async function startTracking() {
 async function stopTracking() {
   if (camera) camera.stop();
   isTracking = false;
-  emaX = null; emaY = null;
-  lastEmittedX = null; lastEmittedY = null;
+  emaX = null;
+  emaY = null;
+  lastEmittedX = null;
+  lastEmittedY = null;
   centerPoint = null;
-  pendingMove = false;
+  if (magnifierEnabled) {
+    toggleMagnifier();
+  }
   updateStatus(statusElements.eye, 'Stopped', '#a0a0a0');
   updateStatus(statusElements.calibration, 'Not Set', '#a0a0a0');
   if (buttons.start) buttons.start.disabled = false;
@@ -345,6 +357,7 @@ window.addEventListener('load', () => {
   buttons.stop = document.getElementById('stop-tracking');
   buttons.recenter = document.getElementById('recenter');
   buttons.toggleVideo = document.getElementById('toggle-video');
+  buttons.toggleMagnifier = document.getElementById('toggle-magnifier');
 
   const sensitivitySlider = document.getElementById('sensitivity-slider');
   const sensitivityValue = document.getElementById('sensitivity-value');
@@ -375,7 +388,14 @@ window.addEventListener('load', () => {
   if (buttons.start) buttons.start.addEventListener('click', startTracking);
   if (buttons.stop) { buttons.stop.addEventListener('click', stopTracking); buttons.stop.disabled = true; }
   if (buttons.recenter) { buttons.recenter.addEventListener('click', recenter); buttons.recenter.disabled = true; }
-  if (buttons.toggleVideo) { buttons.toggleVideo.addEventListener('click', toggleVideoPreview); buttons.toggleVideo.disabled = true; }
+  if (buttons.toggleVideo) {
+    buttons.toggleVideo.addEventListener('click', toggleVideoPreview);
+    buttons.toggleVideo.disabled = true;
+  }
+
+  if (buttons.toggleMagnifier) {
+    buttons.toggleMagnifier.addEventListener('click', toggleMagnifier);
+  }
 
   // Listen for VSR recording toggle from global shortcut
   window.electronAPI.onToggleVSRRecording(() => {
@@ -390,6 +410,36 @@ function applyStabilitySettings() {
   deadzone = DEADZONE_MIN + t * (DEADZONE_MAX - DEADZONE_MIN);
   smoothingDeadzone = Math.round(SMOOTHING_DEADZONE_MIN + t * (SMOOTHING_DEADZONE_MAX - SMOOTHING_DEADZONE_MIN));
   microMovementThreshold = MICRO_THRESHOLD_MIN + t * (MICRO_THRESHOLD_MAX - MICRO_THRESHOLD_MIN);
+}
+
+// Magnifier lens functions
+function toggleMagnifier() {
+  if (!isTracking) {
+    alert('Please start tracking first');
+    return;
+  }
+
+  magnifierEnabled = !magnifierEnabled;
+
+  if (magnifierEnabled) {
+    if (lastEmittedX !== null && lastEmittedY !== null) {
+      window.electronAPI.magnifierShow(lastEmittedX, lastEmittedY);
+    }
+    if (buttons.toggleMagnifier) {
+      buttons.toggleMagnifier.textContent = 'Hide Magnifier';
+      buttons.toggleMagnifier.classList.add('active');
+    }
+  } else {
+    window.electronAPI.magnifierHide();
+    if (buttons.toggleMagnifier) {
+      buttons.toggleMagnifier.textContent = 'Show Magnifier';
+      buttons.toggleMagnifier.classList.remove('active');
+    }
+  }
+}
+
+function updateMagnifierPosition(x, y) {
+  window.electronAPI.magnifierMove(x, y);
 }
 
 // VSR Recording Functions
