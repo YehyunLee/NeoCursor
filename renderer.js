@@ -592,12 +592,23 @@ async function stopVSRRecording() {
   if (result.success && result.result) {
     const output = result.result.text || 'No output';
     console.log('[VSR] Output:', output);
-    updateStatus(statusElements.vsr, output, '#4ecca3');
     
-    // Send VSR transcript to keyboard (typed output)
+    // Try to execute as command instead of typing
     if (output && output !== 'No output') {
-      await window.electronAPI.typeText(output);
-      console.log('[VSR] Typed output:', output);
+      const commandResult = await window.electronAPI.vsrExecuteCommand(output);
+      
+      if (commandResult.success) {
+        const cmd = commandResult.detection.command;
+        const conf = Math.round(commandResult.detection.confidence * 100);
+        updateStatus(statusElements.vsr, `✓ ${cmd} (${conf}%)`, '#4ecca3');
+        console.log('[VSR] Command executed:', cmd);
+      } else {
+        // No command detected - show the raw output
+        updateStatus(statusElements.vsr, `"${output}" (no command)`, '#f39c12');
+        console.log('[VSR] No command detected:', output);
+      }
+    } else {
+      updateStatus(statusElements.vsr, 'No output', '#e94560');
     }
 
     // Reset status after 5 seconds

@@ -6,6 +6,8 @@ const server = require('./server');
 const VSRHandler = require('./vsr-handler');
 const SpeechHandler = require('./speech-handler');
 const GoogleSpeechHandler = require('./google-speech-handler');
+const CommandExecutor = require('./command-executor');
+const CommandDetector = require('./command-detector');
 
 let robot = null;
 let useNativeControl = false;
@@ -129,6 +131,8 @@ let vsrHandler = null;
 let speechHandler = null;
 let googleSpeechHandler = null;
 let activeSpeechEngine = 'whisper'; // 'whisper' or 'google'
+let commandExecutor = null;
+let commandDetector = null;
 
 const initialGoogleKey = process.env.GOOGLE_SPEECH_API_KEY || null;
 let speechSettings = {
@@ -282,6 +286,39 @@ ipcMain.handle('set-fullscreen', async (event, { fullscreen }) => {
   }
 });
 
+// IPC handler for VSR command detection and execution
+ipcMain.handle('vsr-execute-command', async (event, { text }) => {
+  try {
+    if (!commandDetector || !commandExecutor) {
+      return { success: false, error: 'Command system not initialized' };
+    }
+
+    console.log('[VSR Command] Detecting command from:', text);
+    const detection = await commandDetector.detectCommand(text);
+    
+    if (detection.command === 'none' || detection.confidence < 0.5) {
+      console.log('[VSR Command] No command detected or low confidence');
+      return { 
+        success: false, 
+        error: 'No command detected',
+        detection 
+      };
+    }
+
+    console.log('[VSR Command] Executing:', detection.command);
+    const result = await commandExecutor.execute(detection.command, detection.params);
+    
+    return { 
+      success: result.success, 
+      detection,
+      error: result.error 
+    };
+  } catch (error) {
+    console.error('[VSR Command] Error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 app.whenReady().then(() => {
   startCursorHelper();
   createWindow();
@@ -293,6 +330,17 @@ app.whenReady().then(() => {
   speechHandler = new SpeechHandler();
   if (speechSettings.googleApiKey) {
     googleSpeechHandler = new GoogleSpeechHandler(speechSettings.googleApiKey);
+  }
+  
+  // Initialize Command system
+  commandExecutor = new CommandExecutor(robot, useNativeControl);
+  const geminiKey = process.env.GEMINI_API_KEY || null;
+  if (geminiKey) {
+    commandDetector = new CommandDetector(geminiKey);
+    console.log('[Command] Command detector initialized with LLM');
+  } else {
+    commandDetector = new CommandDetector(null);
+    console.log('[Command] Command detector initialized (fallback mode)');
   }
   
   const handleTranscript = (text) => {
