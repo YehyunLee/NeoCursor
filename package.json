@@ -1,0 +1,25 @@
+{
+  "name": "silentcursor",
+  "version": "1.0.0",
+  "description": "Control your computer with eye movement and silent speech - hands-free computing for macOS and Windows",
+  "main": "main.js",
+  "scripts": {
+    "start": "electron .",
+    "dev": "NODE_ENV=development electron .",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/YehyunLee/SilentCursor.git"
+  },
+  "keywords": [],
+  "author": "Thomas and Amy",
+  "license": "ISC",
+  "bugs": {
+    "url": "https://github.com/YehyunLee/SilentCursor/issues"
+  },
+  "homepage": "https://github.com/YehyunLee/SilentCursor#readme",
+  "devDependencies": {
+    "electron": "^41.0.2"
+  }
+}
