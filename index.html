@@ -21,6 +21,8 @@
       --text-secondary: #e4e7ec;
       --muted: #6b7280;
       --danger: #ef4444;
+      --border: rgba(0, 255, 200, 0.15);
+      --border-dim: rgba(255, 255, 255, 0.08);
     }
 
     * {
@@ -31,15 +33,29 @@
 
     body {
       font-family: 'Space Grotesk', -apple-system, sans-serif;
-      background: radial-gradient(circle at 15% 15%, rgba(0, 255, 200, 0.06), transparent 40%),
-                  radial-gradient(circle at 85% 10%, rgba(168, 85, 247, 0.08), transparent 50%),
-                  var(--bg);
+      background: var(--bg);
       color: var(--text);
       min-height: 100vh;
       padding: 2.5rem 2rem 3rem;
       display: flex;
       justify-content: center;
       align-items: flex-start;
+      position: relative;
+      overflow: hidden;
+    }
+
+    body::before {
+      content: '';
+      position: fixed;
+      inset: 0;
+      background:
+        linear-gradient(90deg, rgba(0, 255, 200, 0.03) 1px, transparent 1px),
+        linear-gradient(rgba(0, 255, 200, 0.03) 1px, transparent 1px),
+        linear-gradient(135deg, rgba(168, 85, 247, 0.05) 0%, transparent 50%);
+      background-size: 40px 40px, 40px 40px, 100% 100%;
+      background-position: 0 0, 0 0, 0 0;
+      z-index: -1;
+      pointer-events: none;
     }
 
     .container {
@@ -75,18 +91,21 @@
 
     .controls-panel {
       background: var(--panel);
-      border: 1px solid rgba(255, 255, 255, 0.06);
-      border-radius: 16px;
+      border: 1px solid var(--border-dim);
+      border-left: 3px solid var(--accent);
       padding: 1.5rem;
       display: flex;
       flex-direction: column;
       gap: 1.25rem;
-      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
-      transition: border-color 0.3s ease;
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 4px 4px 0 rgba(0, 255, 200, 0.1);
+      transition: all 0.2s ease;
+      clip-path: polygon(0 0, 100% 0, 100% calc(100% - 8px), calc(100% - 8px) 100%, 0 100%);
     }
 
     .controls-panel:hover {
-      border-color: rgba(255, 255, 255, 0.1);
+      border-color: var(--border);
+      box-shadow: 0 0 0 1px rgba(0, 0, 0, 0.5), 6px 6px 0 rgba(0, 255, 200, 0.15);
+      transform: translate(-1px, -1px);
     }
 
     .controls {
@@ -118,42 +137,49 @@
 
     #sensitivity-slider {
       flex: 1;
-      height: 6px;
-      border-radius: 999px;
+      height: 4px;
       accent-color: var(--accent);
       cursor: pointer;
+      background: rgba(255, 255, 255, 0.1);
+      border: 1px solid var(--border-dim);
     }
 
     button {
       padding: 0.75rem 1.5rem;
       font-size: 0.8rem;
-      border: 1px solid transparent;
-      border-radius: 10px;
+      border: 1px solid var(--accent);
       cursor: pointer;
       font-weight: 600;
-      transition: all 0.2s ease;
+      transition: all 0.15s ease;
       background: var(--accent);
       color: var(--bg);
       text-transform: uppercase;
       letter-spacing: 0.06em;
       font-family: 'Space Grotesk', sans-serif;
+      box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.3);
+      clip-path: polygon(0 0, calc(100% - 6px) 0, 100% 6px, 100% 100%, 0 100%);
+      position: relative;
     }
 
     button.secondary {
       background: transparent;
       color: var(--muted);
-      border-color: rgba(255, 255, 255, 0.1);
+      border-color: var(--border-dim);
+      box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.2);
     }
 
     button.secondary:not(:disabled):hover {
       background: var(--panel-hover);
       color: var(--text);
-      border-color: rgba(255, 255, 255, 0.15);
+      border-color: var(--border);
+      box-shadow: 3px 3px 0 rgba(0, 0, 0, 0.3);
+      transform: translate(-1px, -1px);
     }
 
     button.danger {
       background: var(--danger);
       color: var(--text);
+      border-color: var(--danger);
     }
 
     button:disabled {
@@ -162,12 +188,12 @@
     }
 
     button:not(:disabled):hover {
-      transform: translateY(-1px);
-      box-shadow: 0 8px 20px rgba(0, 255, 200, 0.2);
+      transform: translate(-1px, -1px);
+      box-shadow: 4px 4px 0 rgba(0, 255, 200, 0.3);
     }
 
     button.danger:not(:disabled):hover {
-      box-shadow: 0 8px 20px rgba(239, 68, 68, 0.25);
+      box-shadow: 4px 4px 0 rgba(239, 68, 68, 0.3);
     }
 
     .status-grid {
@@ -178,19 +204,23 @@
 
     .status-item {
       padding: 1.25rem;
-      border-radius: 12px;
       background: var(--panel);
-      border: 1px solid rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-dim);
+      border-top: 2px solid var(--accent);
       min-height: 100px;
       display: flex;
       flex-direction: column;
       gap: 0.5rem;
       transition: all 0.2s ease;
+      box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.2);
+      clip-path: polygon(0 0, 100% 0, 100% calc(100% - 6px), calc(100% - 6px) 100%, 0 100%);
     }
 
     .status-item:hover {
       background: var(--panel-hover);
-      border-color: rgba(255, 255, 255, 0.1);
+      border-color: var(--border);
+      box-shadow: 3px 3px 0 rgba(0, 255, 200, 0.15);
+      transform: translate(-1px, -1px);
     }
 
     .status-item h3 {
@@ -216,17 +246,21 @@
 
     .feature {
       padding: 1.5rem;
-      border-radius: 12px;
       background: var(--panel);
-      border: 1px solid rgba(255, 255, 255, 0.06);
+      border: 1px solid var(--border-dim);
+      border-left: 3px solid var(--accent-secondary);
       min-height: 140px;
       transition: all 0.2s ease;
+      box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.2);
+      clip-path: polygon(6px 0, 100% 0, 100% 100%, 0 100%, 0 6px);
     }
 
     .feature:hover {
       background: var(--panel-hover);
-      border-color: rgba(0, 255, 200, 0.2);
-      transform: translateY(-2px);
+      border-color: var(--border);
+      border-left-color: var(--accent);
+      box-shadow: 4px 4px 0 rgba(168, 85, 247, 0.2);
+      transform: translate(-2px, -2px);
     }
 
     .feature h3 {
@@ -261,13 +295,14 @@
       right: 20px;
       width: 320px;
       height: 240px;
-      border-radius: 12px;
       overflow: hidden;
-      border: 1px solid rgba(0, 255, 200, 0.25);
-      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
+      border: 2px solid var(--accent);
+      border-left: 4px solid var(--accent);
+      box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 255, 200, 0.3);
       z-index: 1000;
       display: none;
       background: #000;
+      clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
     }
 
     #video-container.visible {
@@ -328,7 +363,7 @@
       </div>
       <div class="sensitivity solo">
         <label for="speech-engine-select">Speech Engine</label>
-        <select id="speech-engine-select" style="flex: 1; padding: 0.5rem; border-radius: 8px; background: var(--panel); color: var(--text); border: 1px solid rgba(255, 255, 255, 0.1); font-family: 'Space Grotesk', sans-serif; cursor: pointer;">
+        <select id="speech-engine-select" style="flex: 1; padding: 0.5rem 0.75rem; background: var(--panel); color: var(--text); border: 1px solid var(--border-dim); border-left: 2px solid var(--accent); font-family: 'Space Grotesk', sans-serif; cursor: pointer; box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.2); clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 0 100%);">
           <option value="whisper">Faster-Whisper (Offline)</option>
           <option value="google">Google Speech-to-Text v2</option>
         </select>
