@@ -3,6 +3,9 @@ let isCalibrated = false;
 let smoothingFactor = 0.3;
 let lastX = 0;
 let lastY = 0;
+let guideVisible = true;
+
+const CALIBRATION_STORAGE_KEY = 'silentcursor_calibration_data';
 
 const statusElements = {
   eye: document.getElementById('eye-status'),
@@ -13,7 +16,8 @@ const statusElements = {
 const buttons = {
   start: document.getElementById('start-tracking'),
   stop: document.getElementById('stop-tracking'),
-  calibrate: document.getElementById('calibrate')
+  calibrate: document.getElementById('calibrate'),
+  toggleGuide: document.getElementById('toggle-guide')
 };
 
 function updateStatus(element, text, color) {
@@ -42,6 +46,7 @@ function initializeGazeTracking() {
     console.log('Calibration complete');
     isCalibrated = true;
     updateStatus(statusElements.calibration, 'Calibrated', '#4ecca3');
+    saveCalibrationData();
     updateStatus(statusElements.eye, 'Tracking Active', '#4ecca3');
   };
 
@@ -89,6 +94,67 @@ function initializeGazeTracking() {
   };
 
   GazeCloudAPI.UseClickRecalibration = true;
+  
+  // Try to load saved calibration data
+  loadCalibrationData();
+}
+
+function saveCalibrationData() {
+  try {
+    // GazeCloud stores calibration internally, we just save a flag and timestamp
+    const calibrationData = {
+      timestamp: Date.now(),
+      calibrated: true
+    };
+    localStorage.setItem(CALIBRATION_STORAGE_KEY, JSON.stringify(calibrationData));
+    console.log('Calibration data saved');
+  } catch (error) {
+    console.error('Error saving calibration data:', error);
+  }
+}
+
+function loadCalibrationData() {
+  try {
+    const savedData = localStorage.getItem(CALIBRATION_STORAGE_KEY);
+    if (savedData) {
+      const calibrationData = JSON.parse(savedData);
+      
+      if (calibrationData.calibrated) {
+        isCalibrated = true;
+        const timestamp = calibrationData.timestamp ? new Date(calibrationData.timestamp).toLocaleString() : 'previous session';
+        updateStatus(statusElements.calibration, `Loaded Calibration (${timestamp})`, '#4ecca3');
+        console.log('Loaded calibration from', timestamp);
+        return true;
+      }
+    }
+  } catch (error) {
+    console.error('Error loading calibration data:', error);
+  }
+  return false;
+}
+
+function clearCalibrationData() {
+  localStorage.removeItem(CALIBRATION_STORAGE_KEY);
+  isCalibrated = false;
+  updateStatus(statusElements.calibration, 'Calibration Cleared', '#f39c12');
+  console.log('Calibration data cleared');
+}
+
+function toggleAlignmentGuide() {
+  guideVisible = !guideVisible;
+  
+  // Toggle visibility of GazeCloud's video and overlay elements
+  const videoContainer = document.getElementById('GazeCloudVideoContainer');
+  const overlay = document.getElementById('GazeCloudOverlay');
+  
+  if (videoContainer) {
+    videoContainer.style.display = guideVisible ? 'block' : 'none';
+  }
+  if (overlay) {
+    overlay.style.display = guideVisible ? 'block' : 'none';
+  }
+  
+  console.log('Alignment guide', guideVisible ? 'shown' : 'hidden');
 }
 
 async function startTracking() {
@@ -107,6 +173,7 @@ async function startTracking() {
   
   if (buttons.start) buttons.start.disabled = true;
   if (buttons.stop) buttons.stop.disabled = false;
+  if (buttons.toggleGuide) buttons.toggleGuide.disabled = false;
 }
 
 async function stopTracking() {
@@ -124,6 +191,7 @@ async function stopTracking() {
   
   if (buttons.start) buttons.start.disabled = false;
   if (buttons.stop) buttons.stop.disabled = true;
+  if (buttons.toggleGuide) buttons.toggleGuide.disabled = true;
 }
 
 function startCalibration() {
@@ -131,7 +199,13 @@ function startCalibration() {
     alert('Please start eye tracking first');
     return;
   }
-  updateStatus(statusElements.calibration, 'Calibrating...', '#f39c12');
+  
+  // Clear old calibration data and force recalibration
+  clearCalibrationData();
+  updateStatus(statusElements.calibration, 'Recalibrating...', '#f39c12');
+  
+  // GazeCloud handles calibration automatically
+  // The OnCalibrationComplete callback will save the new data
 }
 
 document.addEventListener('DOMContentLoaded', () => {
@@ -150,6 +224,11 @@ document.addEventListener('DOMContentLoaded', () => {
   
   if (buttons.calibrate) {
     buttons.calibrate.addEventListener('click', startCalibration);
+  }
+  
+  if (buttons.toggleGuide) {
+    buttons.toggleGuide.addEventListener('click', toggleAlignmentGuide);
+    buttons.toggleGuide.disabled = true; // Enable only when tracking starts
   }
   
   setTimeout(() => {
