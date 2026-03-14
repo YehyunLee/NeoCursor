@@ -1,8 +1,6 @@
 const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('path');
-const { exec } = require('child_process');
-const util = require('util');
-const execPromise = util.promisify(exec);
+const { spawn } = require('child_process');
 const server = require('./server');
 
 let robot = null;
@@ -12,8 +10,68 @@ try {
   robot = require('robotjs');
   console.log('Using robotjs for mouse control');
 } catch (error) {
-  console.warn('robotjs not available, using OS-specific fallback (PowerShell/AppleScript)');
+  console.warn('robotjs not available, using OS-specific fallback');
   useNativeControl = true;
+}
+
+// Persistent helper process for fast cursor control without robotjs
+let cursorHelper = null;
+
+function startCursorHelper() {
+  if (!useNativeControl) return;
+
+  if (process.platform === 'win32') {
+    const psScript = [
+      "Add-Type -MemberDefinition '",
+      "[DllImport(\"user32.dll\")] public static extern bool SetCursorPos(int X, int Y);",
+      "[DllImport(\"user32.dll\")] public static extern void mouse_event(int f, int dx, int dy, int c, int i);",
+      "' -Name U32 -Namespace W;",
+      "while($true){",
+        "$l=[Console]::In.ReadLine();",
+        "if($l-eq$null){break}",
+        "$p=$l-split' ';",
+        "if($p[0]-eq'MOVE'-and$p.Length-ge3){[W.U32]::SetCursorPos([int]$p[1],[int]$p[2])|Out-Null}",
+        "elseif($p[0]-eq'CLICK'){",
+          "if($p.Length-ge2-and$p[1]-eq'right'){[W.U32]::mouse_event(8,0,0,0,0);Start-Sleep -m 30;[W.U32]::mouse_event(16,0,0,0,0)}",
+          "else{[W.U32]::mouse_event(2,0,0,0,0);Start-Sleep -m 30;[W.U32]::mouse_event(4,0,0,0,0)}",
+        "}",
+      "}"
+    ].join(' ');
+
+    cursorHelper = spawn('powershell', [
+      '-NoProfile', '-NoLogo', '-ExecutionPolicy', 'Bypass', '-Command', psScript
+    ], { stdio: ['pipe', 'pipe', 'pipe'] });
+
+    cursorHelper.stdout.on('data', () => {});
+    cursorHelper.stderr.on('data', (d) => console.warn('CursorHelper:', d.toString().trim()));
+    cursorHelper.on('exit', (code) => { console.warn('CursorHelper exited:', code); cursorHelper = null; });
+    console.log('Persistent cursor helper started (PowerShell)');
+
+  } else if (process.platform === 'linux') {
+    // xdotool is fast enough per-call, but we can still batch
+    cursorHelper = { platform: 'linux' };
+  }
+  // macOS with robotjs failing is rare; osascript per-call is acceptable
+}
+
+function sendCursorMove(x, y) {
+  const rx = Math.round(x);
+  const ry = Math.round(y);
+  if (cursorHelper && cursorHelper.stdin) {
+    cursorHelper.stdin.write(`MOVE ${rx} ${ry}\n`);
+  } else if (process.platform === 'linux') {
+    spawn('xdotool', ['mousemove', String(rx), String(ry)]);
+  } else if (process.platform === 'darwin') {
+    spawn('osascript', ['-e', `do shell script "cliclick m:${rx},${ry}" 2>/dev/null || true`]);
+  }
+}
+
+function sendCursorClick(button) {
+  if (cursorHelper && cursorHelper.stdin) {
+    cursorHelper.stdin.write(`CLICK ${button}\n`);
+  } else if (process.platform === 'linux') {
+    spawn('xdotool', ['click', button === 'right' ? '3' : '1']);
+  }
 }
 
 let mainWindow;
@@ -64,53 +122,28 @@ let pauseTrackingUntil = 0;
 
 ipcMain.handle('move-cursor', async (event, { x, y }) => {
   try {
-    // Only check for manual override when using robotjs (fast enough)
-    // PowerShell is too slow and causes false positives
     if (!useNativeControl) {
       const currentPos = robot.getMousePos();
-      
-      // Check if user manually moved the mouse
       if (lastSetPos) {
-        const dist = Math.hypot(currentPos.x - lastSetPos.x, currentPos.y - lastSetPos.y);
-        // If actual mouse position is significantly different from last set position, user moved it
-        if (dist > 15) {
-          pauseTrackingUntil = Date.now() + 2000; // Pause tracking for 2 seconds
-        }
+        const d = Math.hypot(currentPos.x - lastSetPos.x, currentPos.y - lastSetPos.y);
+        if (d > 15) pauseTrackingUntil = Date.now() + 2000;
       }
-      
-      // If we are in paused state, return early
       if (Date.now() < pauseTrackingUntil) {
-        // Keep tracking where the user puts it so we don't immediately pause again when resuming
         lastSetPos = currentPos;
         return { success: true, paused: true };
       }
     }
 
-    const displays = screen.getAllDisplays();
-    const primaryDisplay = displays[0];
-    
-    // Clamp coordinates to screen bounds
+    const primaryDisplay = screen.getPrimaryDisplay();
     const clampedX = Math.max(0, Math.min(x, primaryDisplay.size.width - 1));
     const clampedY = Math.max(0, Math.min(y, primaryDisplay.size.height - 1));
-    
+
     if (useNativeControl) {
-      // Use OS-specific commands for system-wide mouse control
-      if (process.platform === 'win32') {
-        // Windows: Use PowerShell with optimized single-line command
-        const psScript = `[System.Windows.Forms.Cursor]::Position = [System.Drawing.Point]::new(${Math.round(clampedX)}, ${Math.round(clampedY)})`;
-        await execPromise(`powershell -NoProfile -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.Windows.Forms; ${psScript}"`);
-      } else if (process.platform === 'darwin') {
-        // macOS: Use cliclick or osascript
-        await execPromise(`osascript -e 'tell application "System Events" to set position of mouse to {${Math.round(clampedX)}, ${Math.round(clampedY)}}'`);
-      } else {
-        // Linux: Use xdotool
-        await execPromise(`xdotool mousemove ${Math.round(clampedX)} ${Math.round(clampedY)}`);
-      }
+      sendCursorMove(clampedX, clampedY);
     } else {
-      // robotjs moves the ACTUAL system cursor across entire desktop
       robot.moveMouse(clampedX, clampedY);
     }
-    
+
     lastSetPos = { x: clampedX, y: clampedY };
     return { success: true, paused: false };
   } catch (error) {
@@ -119,26 +152,10 @@ ipcMain.handle('move-cursor', async (event, { x, y }) => {
   }
 });
 
-// IPC handler for mouse click
 ipcMain.handle('mouse-click', async (event, { button = 'left' }) => {
   try {
     if (useNativeControl) {
-      // Use OS-specific commands for system-wide mouse clicks
-      if (process.platform === 'win32') {
-        // Windows: Use PowerShell with optimized mouse_event
-        const mouseButton = button === 'right' ? 8 : 2; // MOUSEEVENTF_LEFTDOWN=2, MOUSEEVENTF_RIGHTDOWN=8
-        const mouseButtonUp = button === 'right' ? 16 : 4; // MOUSEEVENTF_LEFTUP=4, MOUSEEVENTF_RIGHTUP=16
-        const psScript = `Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern void mouse_event(int flags, int dx, int dy, int cButtons, int info);' -Name U32 -Namespace W; [W.U32]::mouse_event(${mouseButton}, 0, 0, 0, 0); Start-Sleep -Milliseconds 50; [W.U32]::mouse_event(${mouseButtonUp}, 0, 0, 0, 0)`;
-        await execPromise(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript}"`);
-      } else if (process.platform === 'darwin') {
-        // macOS: Use cliclick or osascript
-        const clickType = button === 'right' ? 'rc' : 'c';
-        await execPromise(`osascript -e 'tell application "System Events" to ${button === 'right' ? 'right ' : ''}click at (do shell script "echo $(/usr/bin/python -c \"import Quartz; print(Quartz.NSEvent.mouseLocation().x, Quartz.NSEvent.mouseLocation().y)\")")'`);
-      } else {
-        // Linux: Use xdotool
-        const clickNum = button === 'right' ? 3 : 1;
-        await execPromise(`xdotool click ${clickNum}`);
-      }
+      sendCursorClick(button);
     } else {
       robot.mouseClick(button);
     }
@@ -161,6 +178,7 @@ ipcMain.handle('set-fullscreen', async (event, { fullscreen }) => {
 });
 
 app.whenReady().then(() => {
+  startCursorHelper();
   createWindow();
 
   app.on('activate', function () {
@@ -169,5 +187,9 @@ app.whenReady().then(() => {
 });
 
 app.on('window-all-closed', function () {
+  if (cursorHelper && cursorHelper.stdin) {
+    cursorHelper.stdin.end();
+    cursorHelper.kill();
+  }
   if (process.platform !== 'darwin') app.quit();
 });
