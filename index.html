@@ -5,9 +5,26 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <meta http-equiv="Content-Security-Policy" content="default-src 'self'; script-src 'self' 'unsafe-inline' 'unsafe-eval'; style-src 'self' 'unsafe-inline'; media-src 'self' blob:; connect-src 'self';">
   <title>SilentCursor</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
   <script src="mediapipe/camera_utils.js" crossorigin="anonymous"></script>
   <script src="mediapipe/face_mesh.js" crossorigin="anonymous"></script>
   <style>
+    :root {
+      --bg: #0a0b0f;
+      --bg-secondary: #12141a;
+      --panel: rgba(255, 255, 255, 0.03);
+      --panel-hover: rgba(255, 255, 255, 0.05);
+      --accent: #00ffc8;
+      --accent-dim: #5be7c4;
+      --accent-secondary: #a855f7;
+      --text: #ffffff;
+      --text-secondary: #e4e7ec;
+      --muted: #6b7280;
+      --danger: #ef4444;
+    }
+
     * {
       margin: 0;
       padding: 0;
@@ -15,146 +32,229 @@
     }
 
     body {
-      font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, Oxygen, Ubuntu, Cantarell, sans-serif;
-      background: linear-gradient(135deg, #1a1a2e 0%, #16213e 100%);
-      color: #ffffff;
+      font-family: 'Space Grotesk', -apple-system, sans-serif;
+      background: radial-gradient(circle at 15% 15%, rgba(0, 255, 200, 0.06), transparent 40%),
+                  radial-gradient(circle at 85% 10%, rgba(168, 85, 247, 0.08), transparent 50%),
+                  var(--bg);
+      color: var(--text);
       min-height: 100vh;
+      padding: 2.5rem 2rem 3rem;
       display: flex;
-      flex-direction: column;
-      align-items: center;
       justify-content: center;
-      padding: 2rem;
+      align-items: flex-start;
     }
 
     .container {
-      max-width: 1000px;
-      width: 95%;
-      text-align: center;
-      overflow-x: hidden;
+      width: min(960px, 100%);
+      display: flex;
+      flex-direction: column;
+      gap: 2rem;
+    }
+
+    header {
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      padding-bottom: 0.5rem;
     }
 
     h1 {
-      font-size: 3.5rem;
-      margin-bottom: 1rem;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      -webkit-background-clip: text;
-      -webkit-text-fill-color: transparent;
-      background-clip: text;
-      word-wrap: break-word;
+      font-size: clamp(2.25rem, 5vw, 3.2rem);
+      font-weight: 700;
+      letter-spacing: -0.02em;
+      text-transform: uppercase;
+      color: var(--text);
+      line-height: 1.1;
     }
 
     .tagline {
-      font-size: 1.1rem;
-      color: #a0a0a0;
-      margin-bottom: 2rem;
-      word-wrap: break-word;
-      max-width: 90%;
-      margin-left: auto;
-      margin-right: auto;
+      font-size: 1rem;
+      color: var(--muted);
+      max-width: 520px;
+      line-height: 1.5;
+      font-weight: 400;
     }
 
-    .status {
+    .controls-panel {
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      border-radius: 16px;
+      padding: 1.5rem;
       display: flex;
-      gap: 2rem;
-      justify-content: center;
-      margin-top: 2rem;
+      flex-direction: column;
+      gap: 1.25rem;
+      box-shadow: 0 8px 24px rgba(0, 0, 0, 0.3);
+      transition: border-color 0.3s ease;
+    }
+
+    .controls-panel:hover {
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    .controls {
+      display: flex;
       flex-wrap: wrap;
+      gap: 0.75rem;
+    }
+
+    .sensitivity {
+      display: flex;
+      align-items: center;
+      gap: 1.25rem;
+      padding: 0.5rem 0;
+    }
+
+    .sensitivity label {
+      font-size: 0.85rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      font-weight: 600;
+      white-space: nowrap;
+    }
+
+    #sensitivity-value {
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    #sensitivity-slider {
+      flex: 1;
+      height: 6px;
+      border-radius: 999px;
+      accent-color: var(--accent);
+      cursor: pointer;
+    }
+
+    button {
+      padding: 0.75rem 1.5rem;
+      font-size: 0.8rem;
+      border: 1px solid transparent;
+      border-radius: 10px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.2s ease;
+      background: var(--accent);
+      color: var(--bg);
+      text-transform: uppercase;
+      letter-spacing: 0.06em;
+      font-family: 'Space Grotesk', sans-serif;
+    }
+
+    button.secondary {
+      background: transparent;
+      color: var(--muted);
+      border-color: rgba(255, 255, 255, 0.1);
+    }
+
+    button.secondary:not(:disabled):hover {
+      background: var(--panel-hover);
+      color: var(--text);
+      border-color: rgba(255, 255, 255, 0.15);
+    }
+
+    button.danger {
+      background: var(--danger);
+      color: var(--text);
+    }
+
+    button:disabled {
+      opacity: 0.4;
+      cursor: not-allowed;
+    }
+
+    button:not(:disabled):hover {
+      transform: translateY(-1px);
+      box-shadow: 0 8px 20px rgba(0, 255, 200, 0.2);
+    }
+
+    button.danger:not(:disabled):hover {
+      box-shadow: 0 8px 20px rgba(239, 68, 68, 0.25);
+    }
+
+    .status-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
     }
 
     .status-item {
-      background: rgba(255, 255, 255, 0.1);
-      padding: 1.5rem 2rem;
+      padding: 1.25rem;
       border-radius: 12px;
-      backdrop-filter: blur(10px);
-      min-width: 200px;
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      min-height: 100px;
+      display: flex;
+      flex-direction: column;
+      gap: 0.5rem;
+      transition: all 0.2s ease;
+    }
+
+    .status-item:hover {
+      background: var(--panel-hover);
+      border-color: rgba(255, 255, 255, 0.1);
     }
 
     .status-item h3 {
-      font-size: 0.9rem;
-      color: #a0a0a0;
-      margin-bottom: 0.5rem;
+      font-size: 0.75rem;
       text-transform: uppercase;
-      letter-spacing: 1px;
+      letter-spacing: 0.1em;
+      color: var(--muted);
+      font-weight: 600;
     }
 
     .status-item p {
       font-size: 1.1rem;
-      color: #667eea;
       font-weight: 600;
+      color: var(--text-secondary);
+      line-height: 1.3;
     }
 
-    .features {
-      margin-top: 3rem;
-      display: flex;
-      gap: 1.5rem;
-      flex-wrap: wrap;
-      justify-content: center;
+    .feature-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+      gap: 1rem;
     }
 
     .feature {
-      background: rgba(255, 255, 255, 0.05);
       padding: 1.5rem;
       border-radius: 12px;
-      border: 1px solid rgba(255, 255, 255, 0.1);
-      flex: 1;
-      min-width: 250px;
-      max-width: 300px;
+      background: var(--panel);
+      border: 1px solid rgba(255, 255, 255, 0.06);
+      min-height: 140px;
+      transition: all 0.2s ease;
+    }
+
+    .feature:hover {
+      background: var(--panel-hover);
+      border-color: rgba(0, 255, 200, 0.2);
+      transform: translateY(-2px);
     }
 
     .feature h3 {
-      font-size: 1.2rem;
-      margin-bottom: 0.5rem;
-      color: #667eea;
+      font-size: 0.85rem;
+      color: var(--accent);
+      letter-spacing: 0.1em;
+      text-transform: uppercase;
+      margin-bottom: 0.75rem;
+      font-weight: 700;
     }
 
     .feature p {
-      font-size: 0.95rem;
-      color: #b0b0b0;
+      font-size: 0.9rem;
+      color: var(--muted);
       line-height: 1.6;
+      font-weight: 400;
     }
 
     .footer {
-      margin-top: 3rem;
-      color: #666;
-      font-size: 0.9rem;
-    }
-
-    .controls {
-      margin-top: 2rem;
-      display: flex;
-      gap: 1rem;
-      justify-content: center;
-      flex-wrap: wrap;
-    }
-
-    button {
-      padding: 0.75rem 2rem;
-      font-size: 1rem;
-      border: none;
-      border-radius: 8px;
-      cursor: pointer;
-      font-weight: 600;
-      transition: all 0.3s ease;
-      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
-      color: white;
-    }
-
-    button:hover:not(:disabled) {
-      transform: translateY(-2px);
-      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
-    }
-
-    button:disabled {
-      opacity: 0.5;
-      cursor: not-allowed;
-    }
-
-    button.secondary {
-      background: rgba(255, 255, 255, 0.1);
-    }
-
-    button.danger {
-      background: linear-gradient(135deg, #e94560 0%, #c23866 100%);
+      text-align: center;
+      color: var(--muted);
+      font-size: 0.8rem;
+      border-top: 1px solid rgba(255, 255, 255, 0.05);
+      padding-top: 2rem;
+      margin-top: 1rem;
+      letter-spacing: 0.05em;
     }
 
     #video-container {
@@ -165,50 +265,78 @@
       height: 240px;
       border-radius: 12px;
       overflow: hidden;
-      border: 2px solid rgba(255, 255, 255, 0.2);
-      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.5);
+      border: 1px solid rgba(0, 255, 200, 0.25);
+      box-shadow: 0 20px 60px rgba(0, 0, 0, 0.6);
       z-index: 1000;
       display: none;
+      background: #000;
     }
-    
+
     #video-container.visible {
       display: block;
     }
 
-    .input_video {
+    .input_video,
+    .output_canvas {
+      position: absolute;
+      inset: 0;
       width: 100%;
       height: 100%;
       object-fit: cover;
+    }
+
+    .input_video {
       transform: scaleX(-1);
+      opacity: 0.65;
     }
 
     .output_canvas {
-      position: absolute;
-      top: 0;
-      left: 0;
-      width: 100%;
-      height: 100%;
       transform: scaleX(-1);
+    }
+
+    @media (max-width: 720px) {
+      body {
+        padding: 2rem 1.5rem;
+      }
+
+      .controls {
+        flex-direction: column;
+      }
+
+      button {
+        width: 100%;
+      }
+
+      #video-container {
+        width: 240px;
+        height: 180px;
+        bottom: 16px;
+        right: 16px;
+      }
     }
   </style>
 </head>
 <body>
   <div class="container">
-    <h1>SilentCursor</h1>
-    <p class="tagline">Control your computer with head movement and silent speech</p>
+    <header>
+      <h1>SilentCursor</h1>
+      <p class="tagline">Precision head tracking meets whisper-fast silent speech. Navigate any interface without lifting a finger.</p>
+    </header>
 
-    <div class="controls">
-      <div style="width: 100%; display: flex; justify-content: center; align-items: center; gap: 1rem; margin-bottom: 1rem;">
-        <label for="sensitivity-slider" style="font-weight: 600; color: #a0a0a0;">Sensitivity: <span id="sensitivity-value">5</span></label>
-        <input type="range" id="sensitivity-slider" min="1" max="30" value="5" style="width: 200px;">
+    <section class="controls-panel">
+      <div class="sensitivity">
+        <label for="sensitivity-slider">Sensitivity • <span id="sensitivity-value">5</span></label>
+        <input type="range" id="sensitivity-slider" min="1" max="30" value="5">
       </div>
-      <button id="start-tracking">Start Tracking</button>
-      <button id="stop-tracking" class="danger">Stop Tracking</button>
-      <button id="recenter" class="secondary">Recenter Cursor</button>
-      <button id="toggle-video" class="secondary">Toggle Camera View</button>
-    </div>
+      <div class="controls">
+        <button id="start-tracking">Start Tracking</button>
+        <button id="stop-tracking" class="danger">Stop Tracking</button>
+        <button id="recenter" class="secondary">Recenter Cursor</button>
+        <button id="toggle-video" class="secondary">Toggle Camera View</button>
+      </div>
+    </section>
 
-    <div class="status">
+    <section class="status-grid">
       <div class="status-item">
         <h3>Head Tracking</h3>
         <p id="eye-status">Initializing...</p>
@@ -225,26 +353,26 @@
         <h3>Silent Speech</h3>
         <p id="speech-status">Initializing...</p>
       </div>
-    </div>
+    </section>
 
-    <div class="features">
+    <section class="feature-grid">
       <div class="feature">
-        <h3>� Head Control</h3>
-        <p>Navigate your cursor using precise head movements powered by computer vision</p>
+        <h3>Head Control</h3>
+        <p>Subtle head shifts translate into fluid cursor movement across any desktop, tuned for meditation-level stillness.</p>
       </div>
       <div class="feature">
-        <h3>🤫 Silent Speech</h3>
-        <p>Type without speaking aloud using visual speech recognition technology</p>
+        <h3>Silent Speech</h3>
+        <p>Whisper commands without sound using our visual speech recognition pipeline (currently in active development).</p>
       </div>
       <div class="feature">
-        <h3>🚀 Hands-Free</h3>
-        <p>Work effortlessly without touching keyboard or mouse</p>
+        <h3>Hands-Free</h3>
+        <p>Stack head gaze with blink-based clicks to zero out micro-movements and stay in the flow for hours.</p>
       </div>
-    </div>
+    </section>
 
-    <div class="footer">
-      <p>Built by Thomas and Amy</p>
-    </div>
+    <footer class="footer">
+      Built by Thomas and Amy — 2026
+    </footer>
   </div>
 
   <div id="video-container">
