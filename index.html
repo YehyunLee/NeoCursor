@@ -198,6 +198,10 @@
     <p class="tagline">Control your computer with head movement and silent speech</p>
 
     <div class="controls">
+      <div style="width: 100%; display: flex; justify-content: center; align-items: center; gap: 1rem; margin-bottom: 1rem;">
+        <label for="sensitivity-slider" style="font-weight: 600; color: #a0a0a0;">Sensitivity: <span id="sensitivity-value">10</span></label>
+        <input type="range" id="sensitivity-slider" min="1" max="30" value="10" style="width: 200px;">
+      </div>
       <button id="start-tracking">Start Tracking</button>
       <button id="stop-tracking" class="danger">Stop Tracking</button>
       <button id="recenter" class="secondary">Recenter Cursor</button>

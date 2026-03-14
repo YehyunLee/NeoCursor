@@ -130,8 +130,15 @@ async function moveCursor(deltaX, deltaY) {
       
       const smoothed = smoothCoordinates(targetX, targetY);
       
-      await window.electronAPI.moveCursor(smoothed.x, smoothed.y);
-      updateStatus(statusElements.eye, `Tracking (${smoothed.x}, ${smoothed.y})`, '#4ecca3');
+      const moveResult = await window.electronAPI.moveCursor(smoothed.x, smoothed.y);
+      
+      if (moveResult && moveResult.paused) {
+        updateStatus(statusElements.eye, `Paused (Manual Override)`, '#f39c12');
+        // Reset center point to avoid sudden jumps when tracking resumes
+        centerPoint = null; 
+      } else {
+        updateStatus(statusElements.eye, `Tracking (${smoothed.x}, ${smoothed.y})`, '#4ecca3');
+      }
     }
   } catch (err) {
     console.error('Error moving cursor:', err);
@@ -295,6 +302,21 @@ window.addEventListener('load', () => {
   buttons.stop = document.getElementById('stop-tracking');
   buttons.recenter = document.getElementById('recenter');
   buttons.toggleVideo = document.getElementById('toggle-video');
+  
+  const sensitivitySlider = document.getElementById('sensitivity-slider');
+  const sensitivityValue = document.getElementById('sensitivity-value');
+  
+  // Initialize sensitivity from slider default
+  if (sensitivitySlider) {
+    sensitivity = parseInt(sensitivitySlider.value);
+    
+    sensitivitySlider.addEventListener('input', (e) => {
+      sensitivity = parseInt(e.target.value);
+      if (sensitivityValue) {
+        sensitivityValue.textContent = sensitivity;
+      }
+    });
+  }
   
   updateStatus(statusElements.speech, 'Coming Soon', '#a0a0a0');
   
