@@ -319,14 +319,20 @@
 <body>
   <div class="container">
     <header>
-      <h1>SilentCursor</h1>
+      <h1>Silent Cursor</h1>
       <p class="tagline">Precision head tracking meets whisper-fast silent speech. Navigate any interface without lifting a finger.</p>
     </header>
 
     <section class="controls-panel">
-      <div class="sensitivity">
-        <label for="sensitivity-slider">Sensitivity • <span id="sensitivity-value">5</span></label>
-        <input type="range" id="sensitivity-slider" min="1" max="30" value="5">
+      <div class="control-pair">
+        <div class="sensitivity">
+          <label for="sensitivity-slider">Sensitivity • <span id="sensitivity-value">5</span></label>
+          <input type="range" id="sensitivity-slider" min="1" max="30" value="5">
+        </div>
+        <div class="stability">
+          <label for="stability-slider">Stability • <span id="stability-value">7</span></label>
+          <input type="range" id="stability-slider" min="1" max="10" value="7">
+        </div>
       </div>
       <div class="controls">
         <button id="start-tracking">Start Tracking</button>
@@ -350,7 +356,7 @@
         <p id="click-status">Waiting...</p>
       </div>
       <div class="status-item">
-        <h3>Silent Speech</h3>
+        <h3>Silent Speech • Cmd+R</h3>
         <p id="speech-status">Initializing...</p>
       </div>
       <div class="status-item">
@@ -370,7 +376,7 @@
       </div>
       <div class="feature">
         <h3>Silent Speech</h3>
-        <p>Whisper commands without sound using our visual speech recognition pipeline (currently in active development).</p>
+        <p>Press Cmd+R to record lip movements. Our visual speech recognition captures what you say without making a sound.</p>
       </div>
       <div class="feature">
         <h3>Hands-Free</h3>

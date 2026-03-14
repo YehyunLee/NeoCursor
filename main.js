@@ -1,10 +1,16 @@
-const { app, BrowserWindow, ipcMain, screen } = require('electron');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut } = require('electron');
 const path = require('path');
 const { spawn } = require('child_process');
 const server = require('./server');
+const VSRHandler = require('./vsr-handler');
 
 let robot = null;
 let useNativeControl = false;
+
+// Keep renderer running even when window is unfocused or occluded
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
 
 try {
   robot = require('robotjs');
@@ -116,6 +122,7 @@ function sendMouseUp(button) {
 }
 
 let mainWindow;
+let vsrHandler = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -125,6 +132,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      backgroundThrottling: false
     }
   });
 
@@ -262,8 +270,17 @@ ipcMain.handle('set-fullscreen', async (event, { fullscreen }) => {
 });
 
 app.whenReady().then(() => {
-  startCursorHelper();
   createWindow();
+  
+  // Initialize VSR handler
+  vsrHandler = new VSRHandler();
+  
+  // Register global shortcuts for VSR
+  globalShortcut.register('CommandOrControl+R', () => {
+    if (mainWindow) {
+      mainWindow.webContents.send('toggle-vsr-recording');
+    }
+  });
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -276,4 +293,54 @@ app.on('window-all-closed', function () {
     cursorHelper.kill();
   }
   if (process.platform !== 'darwin') app.quit();
+});
+
+app.on('will-quit', () => {
+  // Unregister all shortcuts
+  globalShortcut.unregisterAll();
+  
+  // Cleanup VSR temp files
+  if (vsrHandler) {
+    vsrHandler.cleanup();
+  }
+});
+
+// VSR IPC Handlers
+ipcMain.handle('vsr-start-recording', async () => {
+  try {
+    if (!vsrHandler) {
+      return { success: false, error: 'VSR handler not initialized' };
+    }
+    const started = vsrHandler.startRecording();
+    return { success: started };
+  } catch (error) {
+    console.error('Error starting VSR recording:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('vsr-add-frame', async (event, { frameData }) => {
+  try {
+    if (!vsrHandler) {
+      return { success: false, error: 'VSR handler not initialized' };
+    }
+    vsrHandler.addFrame(frameData);
+    return { success: true };
+  } catch (error) {
+    console.error('Error adding VSR frame:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('vsr-stop-recording', async () => {
+  try {
+    if (!vsrHandler) {
+      return { success: false, error: 'VSR handler not initialized' };
+    }
+    const result = await vsrHandler.stopRecording();
+    return { success: true, result };
+  } catch (error) {
+    console.error('Error stopping VSR recording:', error);
+    return { success: false, error: error.message };
+  }
 });

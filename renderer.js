@@ -2,22 +2,37 @@
 let isTracking = false;
 let videoVisible = false;
 
-// Head tracking state
+// VSR Recording state
+let isVSRRecording = false;
+let vsrFrameInterval = null;
+let vsrFrameCount = 0;
+const VSR_FPS = 16;
+const VSR_FRAME_INTERVAL = 1000 / VSR_FPS;
+
+// Head tracking + stability state
 let centerPoint = null;
 let sensitivity = 15;
+let stabilityLevel = 7; // 1-10 slider
 
-// Deadzone on raw landmark delta (normalized coords)
-const DEADZONE = 0.003;
+let deadzone = 0.004;
+const DEADZONE_MIN = 0.003;
+const DEADZONE_MAX = 0.009;
 
 // Adaptive EMA: alpha varies by movement magnitude
-const EMA_ALPHA_MIN = 0.08;  // at rest: heavy smoothing (kills jitter)
-const EMA_ALPHA_MAX = 0.55;  // moving: responsive
-const ADAPT_THRESHOLD = 8;   // pixel delta where we switch from rest to moving
+const EMA_ALPHA_MIN = 0.05;  // more smoothing at rest
+const EMA_ALPHA_MAX = 0.38;  // slightly damp fast swings
+const ADAPT_THRESHOLD = 10;  // require larger movement before loosening smoothing
 let emaX = null;
 let emaY = null;
 let lastEmittedX = null;
 let lastEmittedY = null;
-const SMOOTHING_DEADZONE = 3; // pixels — suppress rest jitter
+let smoothingDeadzone = 5;
+const SMOOTHING_DEADZONE_MIN = 3;
+const SMOOTHING_DEADZONE_MAX = 12;
+
+let microMovementThreshold = 0.007;
+const MICRO_THRESHOLD_MIN = 0.004;
+const MICRO_THRESHOLD_MAX = 0.012;
 
 // Cache screen bounds to skip IPC round-trip every frame
 let cachedBounds = null;
@@ -49,9 +64,9 @@ const DRAG_CANCEL_WINDOW = 1500;
 function accelerate(delta) {
   const abs = Math.abs(delta);
   const sign = Math.sign(delta);
-  if (abs < 0.15) return sign * abs * 0.7;
-  if (abs < 0.4)  return sign * (0.105 + (abs - 0.15) * 1.2);
-  return sign * (0.405 + (abs - 0.4) * 2.0);
+  if (abs < 0.18) return sign * abs * 0.6;                      // finer control near rest
+  if (abs < 0.45) return sign * (0.108 + (abs - 0.18) * 0.95);   // gentler ramp
+  return sign * (0.378 + (abs - 0.45) * 1.4);                    // cap large jumps
 }
 
 const statusElements = { eye: null, speech: null, calibration: null, click: null, scroll: null, drag: null };
@@ -191,7 +206,7 @@ function smoothCoordinates(x, y) {
   emaY = alpha * y + (1 - alpha) * emaY;
   let tx = Math.round(emaX);
   let ty = Math.round(emaY);
-  if (lastEmittedX !== null && Math.hypot(tx - lastEmittedX, ty - lastEmittedY) < SMOOTHING_DEADZONE) {
+  if (lastEmittedX !== null && Math.hypot(tx - lastEmittedX, ty - lastEmittedY) < smoothingDeadzone) {
     return { x: lastEmittedX, y: lastEmittedY };
   }
   lastEmittedX = tx;
@@ -232,9 +247,14 @@ function processLandmarks(landmarks) {
 
   let rawDX = currentX - centerPoint.x;
   let rawDY = currentY - centerPoint.y;
-  if (Math.abs(rawDX) < DEADZONE) rawDX = 0;
-  if (Math.abs(rawDY) < DEADZONE) rawDY = 0;
+  if (Math.abs(rawDX) < deadzone) rawDX = 0;
+  if (Math.abs(rawDY) < deadzone) rawDY = 0;
   if (rawDX === 0 && rawDY === 0) return;
+
+  const dominantDelta = Math.max(Math.abs(rawDX), Math.abs(rawDY));
+  if (dominantDelta < microMovementThreshold) {
+    return;
+  }
 
   if (scrollMode) {
     doScroll(rawDX, rawDY);
@@ -438,7 +458,22 @@ window.addEventListener('load', () => {
     });
   }
 
-  updateStatus(statusElements.speech, 'Coming Soon', '#a0a0a0');
+  const stabilitySlider = document.getElementById('stability-slider');
+  const stabilityValue = document.getElementById('stability-value');
+  if (stabilitySlider) {
+    stabilityLevel = parseInt(stabilitySlider.value);
+    applyStabilitySettings();
+    stabilitySlider.addEventListener('input', (e) => {
+      stabilityLevel = parseInt(e.target.value);
+      applyStabilitySettings();
+      if (stabilityValue) stabilityValue.textContent = stabilityLevel;
+    });
+    if (stabilityValue) stabilityValue.textContent = stabilityLevel;
+  } else {
+    applyStabilitySettings();
+  }
+
+  updateStatus(statusElements.speech, 'Ready (Cmd+R to record)', '#a0a0a0');
   if (buttons.start) buttons.start.addEventListener('click', startTracking);
   if (buttons.stop) { buttons.stop.addEventListener('click', stopTracking); buttons.stop.disabled = true; }
   if (buttons.recenter) { buttons.recenter.addEventListener('click', recenter); buttons.recenter.disabled = true; }
@@ -460,5 +495,104 @@ window.addEventListener('load', () => {
     }
   });
 
+  // Listen for VSR recording toggle from global shortcut
+  window.electronAPI.onToggleVSRRecording(() => {
+    toggleVSRRecording();
+  });
+
   setTimeout(initializeTracker, 500);
 });
+
+function applyStabilitySettings() {
+  const t = (stabilityLevel - 1) / 9; // normalize 0-1
+  deadzone = DEADZONE_MIN + t * (DEADZONE_MAX - DEADZONE_MIN);
+  smoothingDeadzone = Math.round(SMOOTHING_DEADZONE_MIN + t * (SMOOTHING_DEADZONE_MAX - SMOOTHING_DEADZONE_MIN));
+  microMovementThreshold = MICRO_THRESHOLD_MIN + t * (MICRO_THRESHOLD_MAX - MICRO_THRESHOLD_MIN);
+}
+
+// VSR Recording Functions
+async function toggleVSRRecording() {
+  if (!isTracking) {
+    console.log('[VSR] Cannot record - tracking not started');
+    return;
+  }
+
+  if (isVSRRecording) {
+    await stopVSRRecording();
+  } else {
+    await startVSRRecording();
+  }
+}
+
+async function startVSRRecording() {
+  const result = await window.electronAPI.vsrStartRecording();
+  if (!result.success) {
+    console.error('[VSR] Failed to start recording:', result.error);
+    return;
+  }
+
+  isVSRRecording = true;
+  vsrFrameCount = 0;
+  updateStatus(statusElements.speech, 'Recording...', '#e94560');
+  console.log('[VSR] Recording started');
+
+  // Capture frames at VSR_FPS
+  vsrFrameInterval = setInterval(async () => {
+    if (!isVSRRecording || !videoElement) return;
+
+    try {
+      // Create a temporary canvas to capture the current video frame
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = videoElement.videoWidth;
+      tempCanvas.height = videoElement.videoHeight;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(videoElement, 0, 0);
+
+      // Convert to base64 JPEG
+      const frameData = tempCanvas.toDataURL('image/jpeg', 0.7);
+      await window.electronAPI.vsrAddFrame(frameData);
+      vsrFrameCount++;
+
+      // Update status with frame count
+      updateStatus(statusElements.speech, `Recording... (${vsrFrameCount} frames)`, '#e94560');
+    } catch (error) {
+      console.error('[VSR] Error capturing frame:', error);
+    }
+  }, VSR_FRAME_INTERVAL);
+}
+
+async function stopVSRRecording() {
+  if (!isVSRRecording) return;
+
+  isVSRRecording = false;
+  if (vsrFrameInterval) {
+    clearInterval(vsrFrameInterval);
+    vsrFrameInterval = null;
+  }
+
+  updateStatus(statusElements.speech, 'Processing...', '#f39c12');
+  console.log(`[VSR] Recording stopped. Captured ${vsrFrameCount} frames`);
+
+  const result = await window.electronAPI.vsrStopRecording();
+  if (result.success && result.result) {
+    const output = result.result.text || 'No output';
+    console.log('[VSR] Output:', output);
+    updateStatus(statusElements.speech, output, '#4ecca3');
+
+    // Reset status after 5 seconds
+    setTimeout(() => {
+      if (!isVSRRecording) {
+        updateStatus(statusElements.speech, 'Ready (Cmd+R to record)', '#a0a0a0');
+      }
+    }, 5000);
+  } else {
+    updateStatus(statusElements.speech, 'Recording too short or error', '#e94560');
+    setTimeout(() => {
+      if (!isVSRRecording) {
+        updateStatus(statusElements.speech, 'Ready (Cmd+R to record)', '#a0a0a0');
+      }
+    }, 3000);
+  }
+
+  vsrFrameCount = 0;
+}
