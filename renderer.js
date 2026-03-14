@@ -14,17 +14,17 @@ let centerPoint = null;
 let sensitivity = 15;
 
 // Deadzone on raw landmark delta (normalized coords)
-const DEADZONE = 0.003;
+const DEADZONE = 0.004;
 
 // Adaptive EMA: alpha varies by movement magnitude
-const EMA_ALPHA_MIN = 0.08;  // at rest: heavy smoothing (kills jitter)
-const EMA_ALPHA_MAX = 0.55;  // moving: responsive
-const ADAPT_THRESHOLD = 8;   // pixel delta where we switch from rest to moving
+const EMA_ALPHA_MIN = 0.05;  // more smoothing at rest
+const EMA_ALPHA_MAX = 0.38;  // slightly damp fast swings
+const ADAPT_THRESHOLD = 10;  // require larger movement before loosening smoothing
 let emaX = null;
 let emaY = null;
 let lastEmittedX = null;
 let lastEmittedY = null;
-const SMOOTHING_DEADZONE = 3; // pixels — suppress rest jitter
+const SMOOTHING_DEADZONE = 5; // pixels — suppress rest jitter
 
 // Cache screen bounds to skip IPC round-trip every frame
 let cachedBounds = null;
@@ -43,9 +43,9 @@ let mouseControlUnavailableShown = false;
 function accelerate(delta) {
   const abs = Math.abs(delta);
   const sign = Math.sign(delta);
-  if (abs < 0.15) return sign * abs * 0.7;
-  if (abs < 0.4)  return sign * (0.105 + (abs - 0.15) * 1.2);
-  return sign * (0.405 + (abs - 0.4) * 2.0);
+  if (abs < 0.18) return sign * abs * 0.6;                      // finer control near rest
+  if (abs < 0.45) return sign * (0.108 + (abs - 0.18) * 0.95);   // gentler ramp
+  return sign * (0.378 + (abs - 0.45) * 1.4);                    // cap large jumps
 }
 
 const statusElements = { eye: null, speech: null, calibration: null, click: null };
