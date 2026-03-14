@@ -49,14 +49,6 @@ let mouseControlUnavailableShown = false;
 let scrollMode = false;
 const SCROLL_SENSITIVITY = 600;
 
-// Drag state machine: 'idle' → 'pending' → 'click' or 'dragging' → 'cancelable' → 'idle'
-// Quick blink (<HOLD_THRESHOLD) = click, sustained hold = drag
-let dragState = 'idle';
-let dragStateTime = 0;
-let leftEyeCloseTime = 0;
-const HOLD_THRESHOLD = 350;
-const DRAG_CANCEL_WINDOW = 1500;
-
 // Non-linear acceleration: small head movements = precision, large = fast jumps
 function accelerate(delta) {
   const abs = Math.abs(delta);
@@ -74,7 +66,8 @@ let faceMesh, camera, videoElement, canvasElement, canvasCtx;
 // Blink Detection - using iris landmarks for more reliable detection
 const RIGHT_EYE = [33, 160, 158, 133, 153, 144];
 const LEFT_EYE = [362, 385, 387, 263, 373, 380];
-const BLINK_THRESHOLD = 0.20;  // EAR threshold for blink detection
+const BLINK_CLOSE_THRESHOLD = 0.18;
+const BLINK_OPEN_THRESHOLD = 0.24;
 const CLICK_COOLDOWN = 800;  // ms between clicks
 let lastLeftClickTime = 0;
 let lastRightClickTime = 0;
@@ -82,6 +75,9 @@ let lastRightClickTime = 0;
 // Drag state
 let isDragging = false;
 let leftEyeClosed = false;
+let leftEyeCloseTime = 0;
+let dragPending = false;
+const DRAG_HOLD_MS = 400;
 
 function updateStatus(element, text, color) {
   if (element) { element.textContent = text; element.style.color = color; }
@@ -101,37 +97,35 @@ function processBlinks(landmarks) {
   const rightEar = calculateEAR(landmarks, RIGHT_EYE);
   const now = Date.now();
   
-  // Only process clicks if enough time has passed since manual movement
   if (now - lastManualMoveTime <= MANUAL_PAUSE_DURATION) {
     return;
   }
   
-  const leftClosed = leftEar < BLINK_THRESHOLD;
-  const rightClosed = rightEar < BLINK_THRESHOLD;
-  const leftOpen = leftEar > BLINK_THRESHOLD;
-  const rightOpen = rightEar > BLINK_THRESHOLD;
+  const leftClosed = leftEar < BLINK_CLOSE_THRESHOLD;
+  const leftFullyOpen = leftEar > BLINK_OPEN_THRESHOLD;
+  const rightClosed = rightEar < BLINK_CLOSE_THRESHOLD;
+  const rightFullyOpen = rightEar > BLINK_OPEN_THRESHOLD;
   
-  // Left eye hold = drag
-  if (leftClosed && rightOpen) {
+  // Left eye press & hold for drag
+  if (leftClosed && rightFullyOpen) {
     if (!leftEyeClosed) {
-      // Left eye just closed
       leftEyeClosed = true;
-      
+      leftEyeCloseTime = now;
+      dragPending = true;
+    } else if (dragPending && now - leftEyeCloseTime >= DRAG_HOLD_MS) {
+      dragPending = false;
       if (!isDragging) {
-        // Start drag
         isDragging = true;
         window.electronAPI.mouseDown('left');
         updateStatus(statusElements.click, "Dragging...", "#f59e0b");
         updateStatus(statusElements.drag, "Close left eye to release", "#f59e0b");
       }
     }
-  } else if (leftOpen) {
+  } else if (leftFullyOpen) {
     if (leftEyeClosed) {
-      // Left eye just opened
       leftEyeClosed = false;
-      
+      dragPending = false;
       if (isDragging) {
-        // End drag
         isDragging = false;
         window.electronAPI.mouseUp('left');
         updateStatus(statusElements.click, "Released", "#4ecca3");
@@ -139,12 +133,21 @@ function processBlinks(landmarks) {
         setTimeout(() => {
           updateStatus(statusElements.click, "Waiting...", "#a0a0a0");
         }, 1000);
+      } else if (now - lastLeftClickTime > CLICK_COOLDOWN) {
+        window.electronAPI.mouseClick('left');
+        lastLeftClickTime = now;
+        updateStatus(statusElements.click, "Left Click", "#4ecca3");
+        setTimeout(() => {
+          if (Date.now() - lastLeftClickTime >= 1000) {
+            updateStatus(statusElements.click, "Waiting...", "#a0a0a0");
+          }
+        }, 1000);
       }
     }
   }
   
-  // Right eye blink = right click (cancels drag if active)
-  if (rightClosed && leftOpen && !isDragging) {
+  // Right eye wink = right click (disabled while dragging)
+  if (!isDragging && rightClosed && leftFullyOpen) {
     if (now - lastRightClickTime > CLICK_COOLDOWN) {
       window.electronAPI.mouseClick('right');
       lastRightClickTime = now;
