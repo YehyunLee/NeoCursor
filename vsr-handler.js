@@ -11,7 +11,10 @@ class VSRHandler {
     this.fps = 16;
     this.minFrames = 24; // Minimum 1.5 seconds at 16fps
     this.outputDir = path.join(__dirname, 'vsr_temp');
-    this.pythonProcess = null;
+    this.serverProcess = null;
+    this.serverReady = false;
+    this.pendingRequests = [];  // queue of {resolve, reject} for in-flight requests
+    this.stdoutBuffer = '';
     this.llmImprover = null;
     
     // Ensure temp directory exists
@@ -26,6 +29,67 @@ class VSRHandler {
     } else {
       console.log('[VSR] No GEMINI_API_KEY found. VSR transcripts will not be improved.');
     }
+
+    // Start persistent Python server process
+    this._startServer();
+  }
+
+  _startServer() {
+    const pythonCmd = process.platform === 'win32' ? 'py' : 'python3';
+    const scriptPath = path.join(__dirname, 'vsr_inference.py');
+
+    console.log('[VSR] Starting persistent inference server...');
+    this.serverProcess = spawn(pythonCmd, [scriptPath, '--server'], {
+      stdio: ['pipe', 'pipe', 'pipe']
+    });
+
+    this.serverProcess.stderr.on('data', (data) => {
+      const msg = data.toString().trim();
+      if (msg) console.warn('[VSR-py]', msg);
+    });
+
+    this.serverProcess.stdout.on('data', (data) => {
+      this.stdoutBuffer += data.toString();
+      // Process complete JSON lines
+      let newlineIdx;
+      while ((newlineIdx = this.stdoutBuffer.indexOf('\n')) !== -1) {
+        const line = this.stdoutBuffer.slice(0, newlineIdx).trim();
+        this.stdoutBuffer = this.stdoutBuffer.slice(newlineIdx + 1);
+        if (!line) continue;
+        try {
+          const msg = JSON.parse(line);
+          if (msg.status === 'ready') {
+            this.serverReady = true;
+            console.log('[VSR] Inference server ready (model loaded)');
+          } else if (msg.status === 'error') {
+            console.error('[VSR] Server failed to start:', msg.error);
+            this.serverReady = false;
+          } else if (this.pendingRequests.length > 0) {
+            const { resolve } = this.pendingRequests.shift();
+            resolve(msg);
+          }
+        } catch (e) {
+          console.error('[VSR] Failed to parse server output:', line);
+        }
+      }
+    });
+
+    this.serverProcess.on('exit', (code) => {
+      console.warn(`[VSR] Server process exited with code ${code}`);
+      this.serverReady = false;
+      // Reject any pending requests
+      while (this.pendingRequests.length > 0) {
+        const { resolve } = this.pendingRequests.shift();
+        resolve({ error: 'Server process exited unexpectedly' });
+      }
+      this.serverProcess = null;
+    });
+
+    this.serverProcess.on('error', (err) => {
+      console.error('[VSR] Failed to start server process:', err);
+      this.serverReady = false;
+      this.serverProcess = null;
+    });
   }
 
   startRecording() {
@@ -71,17 +135,16 @@ class VSRHandler {
       const rawResult = await this.processVideo(savedPath);
       console.log(`[VSR] Raw inference: "${rawResult.text}" (${Date.now() - t0}ms)`);
       
-      // Skip LLM for very short outputs or error messages
+      // Send all non-error outputs through LLM correction
       let improvedResult;
       const rawText = rawResult.text || '';
-      const wordCount = rawText.trim().split(/\s+/).length;
-      if (this.llmImprover && wordCount > 2 && !rawText.startsWith('Error:') && !rawText.startsWith('[')) {
+      if (this.llmImprover && rawText.trim().length > 0 && !rawText.startsWith('Error:') && !rawText.startsWith('[')) {
         t0 = Date.now();
         improvedResult = await this.llmImprover.improveTranscript(rawText);
         console.log(`[VSR] LLM improved (${Date.now() - t0}ms): "${improvedResult}"`);
       } else {
         improvedResult = rawText;
-        console.log(`[VSR] Skipped LLM (${wordCount} words)`);
+        if (!this.llmImprover) console.log(`[VSR] No LLM configured, using raw output`);
       }
       
       // Cleanup
@@ -144,101 +207,87 @@ class VSRHandler {
   }
 
   async processVideo(videoPath) {
-    return new Promise((resolve, reject) => {
-      // Determine Python executable (try python3 first, fallback to python)
+    // Use persistent server if available, otherwise fall back to single-shot
+    if (this.serverReady && this.serverProcess && this.serverProcess.stdin) {
+      return this._processViaServer(videoPath);
+    }
+    return this._processViaSingleShot(videoPath);
+  }
+
+  _processViaServer(videoPath) {
+    return new Promise((resolve) => {
+      console.log(`[VSR] Sending to server: ${videoPath}`);
+      this.pendingRequests.push({
+        resolve: (msg) => {
+          if (msg.success) {
+            console.log(`[VSR] Inference successful: "${msg.text}"`);
+            resolve({ text: msg.text || '[No speech detected]', confidence: 1.0, videoPath });
+          } else if (msg.error) {
+            console.error(`[VSR] Inference error: ${msg.error}`);
+            resolve({ text: `Error: ${msg.error}`, confidence: 0.0, videoPath });
+          } else {
+            resolve({ text: '[Unexpected response format]', confidence: 0.0, videoPath });
+          }
+        }
+      });
+      this.serverProcess.stdin.write(videoPath + '\n');
+    });
+  }
+
+  _processViaSingleShot(videoPath) {
+    return new Promise((resolve) => {
       const pythonCmd = process.platform === 'win32' ? 'py' : 'python3';
       const scriptPath = path.join(__dirname, 'vsr_inference.py');
-      
-      console.log(`[VSR] Running inference: ${pythonCmd} ${scriptPath} ${videoPath}`);
-      
-      const pythonProcess = spawn(pythonCmd, [scriptPath, videoPath]);
-      
+
+      console.log(`[VSR] Fallback single-shot: ${pythonCmd} ${scriptPath} ${videoPath}`);
+      const proc = spawn(pythonCmd, [scriptPath, videoPath]);
+
       let stdout = '';
       let stderr = '';
-      
-      pythonProcess.stdout.on('data', (data) => {
-        stdout += data.toString();
-      });
-      
-      pythonProcess.stderr.on('data', (data) => {
-        stderr += data.toString();
-      });
-      
-      pythonProcess.on('close', (code) => {
+      proc.stdout.on('data', (d) => { stdout += d.toString(); });
+      proc.stderr.on('data', (d) => { stderr += d.toString(); });
+
+      proc.on('close', (code) => {
         if (code !== 0) {
-          console.error(`[VSR] Python process exited with code ${code}`);
-          console.error(`[VSR] stderr: ${stderr}`);
-          
-          // Try to parse error from stdout
+          console.error(`[VSR] Python exited ${code}: ${stderr}`);
           try {
-            const errorResult = JSON.parse(stdout);
-            if (errorResult.error) {
-              resolve({
-                text: `Error: ${errorResult.error}`,
-                confidence: 0.0,
-                videoPath: videoPath
-              });
-              return;
-            }
-          } catch (e) {
-            // Not JSON, use raw error
-          }
-          
-          resolve({
-            text: '[VSR Engine Error - Check console for details]',
-            confidence: 0.0,
-            videoPath: videoPath
-          });
+            const err = JSON.parse(stdout);
+            if (err.error) { resolve({ text: `Error: ${err.error}`, confidence: 0.0, videoPath }); return; }
+          } catch (_) {}
+          resolve({ text: '[VSR Engine Error]', confidence: 0.0, videoPath });
           return;
         }
-        
         try {
           const result = JSON.parse(stdout);
-          
           if (result.success) {
-            console.log(`[VSR] Inference successful: "${result.text}"`);
-            resolve({
-              text: result.text || '[No speech detected]',
-              confidence: 1.0,
-              videoPath: videoPath
-            });
-          } else if (result.error) {
-            console.error(`[VSR] Inference error: ${result.error}`);
-            resolve({
-              text: `Error: ${result.error}`,
-              confidence: 0.0,
-              videoPath: videoPath
-            });
+            resolve({ text: result.text || '[No speech detected]', confidence: 1.0, videoPath });
           } else {
-            resolve({
-              text: '[Unexpected response format]',
-              confidence: 0.0,
-              videoPath: videoPath
-            });
+            resolve({ text: `Error: ${result.error || 'unknown'}`, confidence: 0.0, videoPath });
           }
-        } catch (error) {
-          console.error(`[VSR] Failed to parse Python output: ${error}`);
-          console.error(`[VSR] stdout: ${stdout}`);
-          resolve({
-            text: '[Failed to parse VSR output]',
-            confidence: 0.0,
-            videoPath: videoPath
-          });
+        } catch (e) {
+          console.error(`[VSR] Parse error: ${e}\nstdout: ${stdout}`);
+          resolve({ text: '[Failed to parse VSR output]', confidence: 0.0, videoPath });
         }
       });
-      
-      pythonProcess.on('error', (error) => {
-        console.error(`[VSR] Failed to start Python process: ${error}`);
-        resolve({
-          text: '[VSR Engine Not Available - Install Python and dependencies]',
-          confidence: 0.0,
-          videoPath: videoPath
-        });
+
+      proc.on('error', (err) => {
+        console.error(`[VSR] Failed to start Python: ${err}`);
+        resolve({ text: '[VSR Engine Not Available]', confidence: 0.0, videoPath });
       });
     });
   }
 
   cleanup() {
+    // Shut down persistent server
+    if (this.serverProcess) {
+      try {
+        this.serverProcess.stdin.end();
+        this.serverProcess.kill();
+      } catch (_) {}
+      this.serverProcess = null;
+      this.serverReady = false;
+    }
+
     // Clean up temp files
     if (fs.existsSync(this.outputDir)) {
       const files = fs.readdirSync(this.outputDir);
