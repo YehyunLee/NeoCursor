@@ -8,6 +8,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   scroll: (dx, dy) => ipcRenderer.invoke('scroll', { dx, dy }),
   getScreenBounds: () => ipcRenderer.invoke('get-screen-bounds'),
   setFullscreen: (fullscreen) => ipcRenderer.invoke('set-fullscreen', { fullscreen }),
+  altTab: (direction) => ipcRenderer.invoke('alt-tab', { direction }),
   vsrStartRecording: () => ipcRenderer.invoke('vsr-start-recording'),
   vsrAddFrame: (frameData) => ipcRenderer.invoke('vsr-add-frame', { frameData }),
   vsrStopRecording: () => ipcRenderer.invoke('vsr-stop-recording'),
@@ -17,5 +18,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   speechFeedAudio: (audioBuffer) => ipcRenderer.invoke('speech-feed-audio', { audioBuffer }),
   getSpeechSettings: () => ipcRenderer.invoke('get-speech-settings'),
   updateSpeechSettings: (settings) => ipcRenderer.invoke('update-speech-settings', settings),
-  typeText: (text) => ipcRenderer.invoke('type-text', { text })
+  typeText: (text) => ipcRenderer.invoke('type-text', { text }),
+  onTextModeChanged: (callback) => ipcRenderer.on('text-mode-changed', (event, isTextMode) => callback(isTextMode))
 });

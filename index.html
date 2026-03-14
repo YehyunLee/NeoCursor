@@ -32,14 +32,10 @@
     }
 
     body {
-      font-family: 'Space Grotesk', -apple-system, sans-serif;
-      background: var(--bg);
+      font-family: 'Space Grotesk', sans-serif;
+      background: transparent;
       color: var(--text);
-      min-height: 100vh;
-      padding: 2.5rem 2rem 3rem;
-      display: flex;
-      justify-content: center;
-      align-items: flex-start;
+      line-height: 1.6;
       position: relative;
       overflow: hidden;
     }
@@ -60,7 +56,7 @@
 
     .container {
       width: min(960px, 100%);
-      display: flex;
+      display: none; /* Hidden in overlay mode */
       flex-direction: column;
       gap: 2rem;
     }
@@ -293,20 +289,17 @@
       position: fixed;
       bottom: 20px;
       right: 20px;
-      width: 320px;
-      height: 240px;
+      width: 240px;
+      height: 180px;
       overflow: hidden;
       border: 2px solid var(--accent);
       border-left: 4px solid var(--accent);
       box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 255, 200, 0.3);
       z-index: 1000;
-      display: none;
+      display: block;
       background: #000;
       clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
-    }
-
-    #video-container.visible {
-      display: block;
+      pointer-events: auto;
     }
 
     .input_video,
@@ -327,6 +320,137 @@
       transform: scaleX(-1);
     }
 
+    /* Gaze trigger bars */
+    #gaze-bars {
+      position: fixed;
+      inset: 0;
+      pointer-events: auto;
+      z-index: 999;
+      display: block;
+    }
+
+    .gaze-bar {
+      position: absolute;
+      background: rgba(0, 255, 200, 0.1);
+      border: 2px solid rgba(0, 255, 200, 0.3);
+      transition: all 0.2s ease;
+    }
+
+    .gaze-bar.triggered {
+      background: rgba(0, 255, 200, 0.3);
+      border-color: rgba(0, 255, 200, 0.8);
+      box-shadow: 0 0 20px rgba(0, 255, 200, 0.5);
+    }
+
+    .gaze-bar-top {
+      top: 0;
+      left: 20%;
+      right: 20%;
+      height: 60px;
+      border-bottom: 3px solid var(--accent);
+      clip-path: polygon(0 0, 100% 0, calc(100% - 8px) 100%, 8px 100%);
+    }
+
+    .gaze-bar-bottom {
+      bottom: 0;
+      left: 20%;
+      right: 20%;
+      height: 60px;
+      border-top: 3px solid var(--accent);
+      clip-path: polygon(8px 0, calc(100% - 8px) 0, 100% 100%, 0 100%);
+    }
+
+    .gaze-bar-left {
+      left: 0;
+      top: 20%;
+      bottom: 20%;
+      width: 60px;
+      border-right: 3px solid var(--accent);
+      clip-path: polygon(0 0, 100% 8px, 100% calc(100% - 8px), 0 100%);
+    }
+
+    .gaze-bar-right {
+      right: 0;
+      top: 20%;
+      bottom: 20%;
+      width: 60px;
+      border-left: 3px solid var(--accent);
+      clip-path: polygon(0 8px, 100% 0, 100% 100%, 0 calc(100% - 8px));
+    }
+
+    /* Gaze feedback circle */
+    #gaze-circle {
+      position: fixed;
+      width: 80px;
+      height: 80px;
+      border: 3px solid var(--accent);
+      border-radius: 50%;
+      pointer-events: none;
+      z-index: 1001;
+      display: block;
+      opacity: 0;
+      transform: translate(-50%, -50%);
+      transition: all 0.15s ease-out;
+      box-shadow: 0 0 15px rgba(0, 255, 200, 0.4), inset 0 0 10px rgba(0, 255, 200, 0.2);
+    }
+
+    #gaze-circle.active {
+      opacity: 1;
+    }
+
+    #gaze-circle.filling {
+      background: radial-gradient(circle, rgba(0, 255, 200, 0.3) 0%, transparent 70%);
+      border-width: 4px;
+      box-shadow: 0 0 25px rgba(0, 255, 200, 0.6), inset 0 0 15px rgba(0, 255, 200, 0.4);
+    }
+
+    /* Action feedback overlay */
+    #action-feedback {
+      position: fixed;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      background: rgba(10, 11, 15, 0.95);
+      border: 3px solid var(--accent);
+      border-left: 6px solid var(--accent);
+      padding: 2rem 3rem;
+      font-size: 2rem;
+      font-weight: 700;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.1em;
+      pointer-events: none;
+      z-index: 10000;
+      opacity: 0;
+      transition: opacity 0.2s ease;
+      box-shadow: 0 0 30px rgba(0, 255, 200, 0.5), inset 0 0 20px rgba(0, 255, 200, 0.1);
+      clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
+      min-width: 300px;
+      text-align: center;
+    }
+
+    #action-feedback.show {
+      opacity: 1;
+    }
+
+    #action-feedback.click {
+      border-color: #4ecca3;
+      color: #4ecca3;
+      box-shadow: 0 0 30px rgba(78, 204, 163, 0.5), inset 0 0 20px rgba(78, 204, 163, 0.1);
+    }
+
+    #action-feedback.drag {
+      border-color: #f39c12;
+      color: #f39c12;
+      box-shadow: 0 0 30px rgba(243, 156, 18, 0.5), inset 0 0 20px rgba(243, 156, 18, 0.1);
+    }
+
+    #action-feedback.scroll {
+      border-color: #a855f7;
+      color: #a855f7;
+      box-shadow: 0 0 30px rgba(168, 85, 247, 0.5), inset 0 0 20px rgba(168, 85, 247, 0.1);
+    }
+
     @media (max-width: 720px) {
       body {
         padding: 2rem 1.5rem;
@@ -345,6 +469,18 @@
         height: 180px;
         bottom: 16px;
         right: 16px;
+      }
+
+      .gaze-bar-top, .gaze-bar-bottom {
+        left: 10%;
+        right: 10%;
+        height: 50px;
+      }
+
+      .gaze-bar-left, .gaze-bar-right {
+        top: 15%;
+        bottom: 15%;
+        width: 50px;
       }
     }
   </style>
@@ -432,6 +568,20 @@
     <video class="input_video" autoplay playsinline></video>
     <canvas class="output_canvas" width="320" height="240"></canvas>
   </div>
+
+  <!-- Gaze trigger bars -->
+  <div id="gaze-bars">
+    <div class="gaze-bar gaze-bar-top" data-action="scroll-up"></div>
+    <div class="gaze-bar gaze-bar-bottom" data-action="scroll-down"></div>
+    <div class="gaze-bar gaze-bar-left" data-action="alt-tab-left"></div>
+    <div class="gaze-bar gaze-bar-right" data-action="alt-tab-right"></div>
+  </div>
+
+  <!-- Gaze feedback circle -->
+  <div id="gaze-circle"></div>
+
+  <!-- Action feedback overlay -->
+  <div id="action-feedback"></div>
 
   <script src="mediapipe/camera_utils.js" crossorigin="anonymous"></script>
   <script src="mediapipe/face_mesh.js" crossorigin="anonymous"></script>
