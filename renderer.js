@@ -17,7 +17,8 @@ const SMOOTHING_DEADZONE = 3; // pixels
 const statusElements = {
   eye: null,
   speech: null,
-  calibration: null
+  calibration: null,
+  click: null
 };
 
 const buttons = {
@@ -34,10 +35,126 @@ let videoElement;
 let canvasElement;
 let canvasCtx;
 
+// Blink Detection State
+const RIGHT_EYE = [33, 160, 158, 133, 153, 144]; // User's right eye
+const LEFT_EYE = [362, 385, 387, 263, 373, 380]; // User's left eye
+const BASELINE_LEARN_RATE = 0.03;
+const CLOSED_RATIO = 0.78;
+const OPEN_RATIO = 0.92;
+const CLICK_COOLDOWN = 500; // ms
+
+let blinkState = {
+  left: false,
+  right: false,
+  both: false,
+  startTime: 0
+};
+let lastClickTime = 0;
+let baselineLeftEAR = 0.28;
+let baselineRightEAR = 0.28;
+
 function updateStatus(element, text, color) {
   if (element) {
     element.textContent = text;
     element.style.color = color;
+  }
+}
+
+function distance(p1, p2) {
+  return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+}
+
+function calculateEAR(landmarks, eyeIndices) {
+  const p1 = landmarks[eyeIndices[0]];
+  const p2 = landmarks[eyeIndices[1]];
+  const p3 = landmarks[eyeIndices[2]];
+  const p4 = landmarks[eyeIndices[3]];
+  const p5 = landmarks[eyeIndices[4]];
+  const p6 = landmarks[eyeIndices[5]];
+
+  const p2_p6 = distance(p2, p6);
+  const p3_p5 = distance(p3, p5);
+  const p1_p4 = distance(p1, p4);
+
+  return (p2_p6 + p3_p5) / (2.0 * p1_p4);
+}
+
+function updateEARBaseline(currentBaseline, ear, isClosed) {
+  if (isClosed || !isFinite(ear)) return currentBaseline;
+  const clampedEAR = Math.min(Math.max(ear, 0.15), 0.5);
+  return (currentBaseline * (1 - BASELINE_LEARN_RATE)) + (clampedEAR * BASELINE_LEARN_RATE);
+}
+
+function processBlinks(landmarks) {
+  if (!isTracking || !landmarks || landmarks.length === 0) return;
+  
+  const now = Date.now();
+  
+  const leftEar = calculateEAR(landmarks, LEFT_EYE);
+  const rightEar = calculateEAR(landmarks, RIGHT_EYE);
+  
+  const leftClosed = leftEar < baselineLeftEAR * CLOSED_RATIO;
+  const rightClosed = rightEar < baselineRightEAR * CLOSED_RATIO;
+  const leftOpen = leftEar > baselineLeftEAR * OPEN_RATIO;
+  const rightOpen = rightEar > baselineRightEAR * OPEN_RATIO;
+  
+  baselineLeftEAR = updateEARBaseline(baselineLeftEAR, leftEar, leftClosed);
+  baselineRightEAR = updateEARBaseline(baselineRightEAR, rightEar, rightClosed);
+
+  if (leftClosed && rightClosed) {
+    if (!blinkState.both) {
+      blinkState.both = true;
+      blinkState.startTime = now;
+    }
+    blinkState.left = true;
+    blinkState.right = true;
+  } else if (leftClosed && rightOpen) {
+    if (!blinkState.left) {
+      blinkState.left = true;
+      blinkState.startTime = now;
+    }
+  } else if (rightClosed && leftOpen) {
+    if (!blinkState.right) {
+      blinkState.right = true;
+      blinkState.startTime = now;
+    }
+  } else {
+    // Both eyes are open, check if a blink just finished
+    if (blinkState.left || blinkState.right || blinkState.both) {
+      const duration = now - blinkState.startTime;
+      
+      // Filter out micro-jitters and really long closures
+      if (duration > 50 && duration < 800) {
+        if (now - lastClickTime > CLICK_COOLDOWN) {
+          if (blinkState.both) {
+            updateStatus(statusElements.click, "Both Blink (Ignored)", "#a0a0a0");
+          } else if (blinkState.left) {
+            // User left eye blink -> Left Click
+            updateStatus(statusElements.click, "Left Click", "#4ecca3");
+            window.electronAPI.mouseClick('left');
+            lastClickTime = now;
+          } else if (blinkState.right) {
+            // User right eye blink -> Right Click
+            updateStatus(statusElements.click, "Right Click", "#667eea");
+            window.electronAPI.mouseClick('right');
+            lastClickTime = now;
+          }
+          
+          // Clear status after a moment
+          setTimeout(() => {
+            if (Date.now() - lastClickTime >= 1000) {
+              updateStatus(statusElements.click, "Waiting...", "#a0a0a0");
+            }
+          }, 1000);
+        }
+      }
+      
+      // Reset state
+      blinkState.left = false;
+      blinkState.right = false;
+      blinkState.both = false;
+      blinkState.startTime = 0;
+    }
   }
 }
 
@@ -183,7 +300,9 @@ function onResults(results) {
   }
   
   if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
-    processLandmarks(results.multiFaceLandmarks[0]);
+    const landmarks = results.multiFaceLandmarks[0];
+    processLandmarks(landmarks);
+    processBlinks(landmarks);
   }
 }
 
@@ -297,6 +416,7 @@ window.addEventListener('load', () => {
   statusElements.eye = document.getElementById('eye-status');
   statusElements.speech = document.getElementById('speech-status');
   statusElements.calibration = document.getElementById('calibration-status');
+  statusElements.click = document.getElementById('click-status');
   
   buttons.start = document.getElementById('start-tracking');
   buttons.stop = document.getElementById('stop-tracking');

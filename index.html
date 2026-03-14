@@ -199,8 +199,8 @@
 
     <div class="controls">
       <div style="width: 100%; display: flex; justify-content: center; align-items: center; gap: 1rem; margin-bottom: 1rem;">
-        <label for="sensitivity-slider" style="font-weight: 600; color: #a0a0a0;">Sensitivity: <span id="sensitivity-value">10</span></label>
-        <input type="range" id="sensitivity-slider" min="1" max="30" value="10" style="width: 200px;">
+        <label for="sensitivity-slider" style="font-weight: 600; color: #a0a0a0;">Sensitivity: <span id="sensitivity-value">5</span></label>
+        <input type="range" id="sensitivity-slider" min="1" max="30" value="5" style="width: 200px;">
       </div>
       <button id="start-tracking">Start Tracking</button>
       <button id="stop-tracking" class="danger">Stop Tracking</button>
@@ -216,6 +216,10 @@
       <div class="status-item">
         <h3>Center Point</h3>
         <p id="calibration-status">Not Set</p>
+      </div>
+      <div class="status-item">
+        <h3>Click Action</h3>
+        <p id="click-status">Waiting...</p>
       </div>
       <div class="status-item">
         <h3>Silent Speech</h3>
