@@ -6,7 +6,7 @@ let videoVisible = false;
 let isVSRRecording = false;
 let vsrFrameInterval = null;
 let vsrFrameCount = 0;
-const VSR_FPS = 12;
+const VSR_FPS = 16;
 const VSR_FRAME_INTERVAL = 1000 / VSR_FPS;
 const VSR_CAPTURE_WIDTH = 320;
 let vsrCanvas = null;
@@ -484,8 +484,11 @@ async function startVSRRecording() {
     if (!isVSRRecording || !videoElement) return;
 
     try {
+      // Convert to grayscale to match what the VSR model expects
+      vsrCanvasCtx.filter = 'grayscale(1)';
       vsrCanvasCtx.drawImage(videoElement, 0, 0, vsrCanvas.width, vsrCanvas.height);
-      const frameData = vsrCanvas.toDataURL('image/jpeg', 0.5);
+      vsrCanvasCtx.filter = 'none';
+      const frameData = vsrCanvas.toDataURL('image/jpeg', 0.25);
       await window.electronAPI.vsrAddFrame(frameData);
       vsrFrameCount++;
 
