@@ -21,5 +21,8 @@
   "homepage": "https://github.com/YehyunLee/SilentCursor#readme",
   "devDependencies": {
     "electron": "^41.0.2"
+  },
+  "dependencies": {
+    "robotjs": "^0.7.0"
   }
 }

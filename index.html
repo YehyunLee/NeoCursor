@@ -3,7 +3,9 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta http-equiv="Content-Security-Policy" content="default-src 'self' https://api.gazerecorder.com; script-src 'self' 'unsafe-inline' https://api.gazerecorder.com; style-src 'self' 'unsafe-inline'; media-src 'self' blob:;">
   <title>SilentCursor</title>
+  <script src="https://api.gazerecorder.com/GazeCloudAPI.js"></script>
   <style>
     * {
       margin: 0;
@@ -108,6 +110,44 @@
       color: #666;
       font-size: 0.9rem;
     }
+
+    .controls {
+      margin-top: 2rem;
+      display: flex;
+      gap: 1rem;
+      justify-content: center;
+      flex-wrap: wrap;
+    }
+
+    button {
+      padding: 0.75rem 2rem;
+      font-size: 1rem;
+      border: none;
+      border-radius: 8px;
+      cursor: pointer;
+      font-weight: 600;
+      transition: all 0.3s ease;
+      background: linear-gradient(135deg, #667eea 0%, #764ba2 100%);
+      color: white;
+    }
+
+    button:hover:not(:disabled) {
+      transform: translateY(-2px);
+      box-shadow: 0 4px 12px rgba(102, 126, 234, 0.4);
+    }
+
+    button:disabled {
+      opacity: 0.5;
+      cursor: not-allowed;
+    }
+
+    button.secondary {
+      background: rgba(255, 255, 255, 0.1);
+    }
+
+    button.danger {
+      background: linear-gradient(135deg, #e94560 0%, #c23866 100%);
+    }
   </style>
 </head>
 <body>
@@ -115,10 +155,20 @@
     <h1>SilentCursor</h1>
     <p class="tagline">Control your computer with eye movement and silent speech</p>
 
+    <div class="controls">
+      <button id="start-tracking">Start Eye Tracking</button>
+      <button id="stop-tracking" class="danger">Stop Tracking</button>
+      <button id="calibrate" class="secondary">Calibrate</button>
+    </div>
+
     <div class="status">
       <div class="status-item">
         <h3>Eye Tracking</h3>
         <p id="eye-status">Initializing...</p>
+      </div>
+      <div class="status-item">
+        <h3>Calibration</h3>
+        <p id="calibration-status">Not Started</p>
       </div>
       <div class="status-item">
         <h3>Silent Speech</h3>
@@ -146,12 +196,6 @@
     </div>
   </div>
 
-  <script>
-    // Placeholder for initialization
-    setTimeout(() => {
-      document.getElementById('eye-status').textContent = 'Ready';
-      document.getElementById('speech-status').textContent = 'Ready';
-    }, 1000);
-  </script>
+  <script src="renderer.js"></script>
 </body>
 </html>
