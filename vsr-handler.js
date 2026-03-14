@@ -9,7 +9,7 @@ class VSRHandler {
     this.isRecording = false;
     this.recordedFrames = [];
     this.fps = 16;
-    this.minFrames = 24; // Minimum 1.5 seconds at 16fps
+    this.minFrames = 32; // Minimum 2 seconds at 16fps (matches upstream)
     this.outputDir = path.join(__dirname, 'vsr_temp');
     this.serverProcess = null;
     this.serverReady = false;
