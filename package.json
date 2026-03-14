@@ -19,6 +19,16 @@
     "url": "https://github.com/YehyunLee/SilentCursor/issues"
   },
   "homepage": "https://github.com/YehyunLee/SilentCursor#readme",
+  "build": {
+    "appId": "com.silentcursor.app",
+    "mac": {
+      "category": "public.app-category.utilities",
+      "extendInfo": {
+        "NSCameraUsageDescription": "SilentCursor needs camera access for eye tracking to control your cursor",
+        "NSCameraUseContinuityCameraDeviceType": true
+      }
+    }
+  },
   "devDependencies": {
     "electron": "^41.0.2"
   },
