@@ -270,6 +270,7 @@ ipcMain.handle('set-fullscreen', async (event, { fullscreen }) => {
 });
 
 app.whenReady().then(() => {
+  startCursorHelper();
   createWindow();
   
   // Initialize VSR handler
