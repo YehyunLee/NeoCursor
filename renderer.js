@@ -30,7 +30,20 @@ const STATUS_UPDATE_INTERVAL_MS = 250;
 
 // Prevent stacking IPC calls
 let pendingMove = false;
+let pendingScroll = false;
 let mouseControlUnavailableShown = false;
+
+// Scroll mode: hold Z to scroll instead of moving cursor
+let scrollMode = false;
+const SCROLL_SENSITIVITY = 600;
+
+// Drag state machine: 'idle' → 'pending' → 'click' or 'dragging' → 'cancelable' → 'idle'
+// Quick blink (<HOLD_THRESHOLD) = click, sustained hold = drag
+let dragState = 'idle';
+let dragStateTime = 0;
+let leftEyeCloseTime = 0;
+const HOLD_THRESHOLD = 350;
+const DRAG_CANCEL_WINDOW = 1500;
 
 // Non-linear acceleration: small head movements = precision, large = fast jumps
 function accelerate(delta) {
@@ -41,7 +54,7 @@ function accelerate(delta) {
   return sign * (0.405 + (abs - 0.4) * 2.0);
 }
 
-const statusElements = { eye: null, speech: null, calibration: null, click: null };
+const statusElements = { eye: null, speech: null, calibration: null, click: null, scroll: null, drag: null };
 const buttons = { start: null, stop: null, recenter: null, toggleVideo: null };
 
 let faceMesh, camera, videoElement, canvasElement, canvasCtx;
@@ -85,24 +98,83 @@ function processBlinks(landmarks) {
   baselineLeftEAR = updateEARBaseline(baselineLeftEAR, leftEar, leftClosed);
   baselineRightEAR = updateEARBaseline(baselineRightEAR, rightEar, rightClosed);
 
-  if (leftClosed && rightOpen) {
-    if (!blinkState.left && Date.now() - lastClickTime > CLICK_COOLDOWN) {
-      blinkState.left = true;
-      updateStatus(statusElements.click, "Left Click", "#4ecca3");
+  const now = Date.now();
+
+  // Expire cancelable state after window
+  if (dragState === 'cancelable' && now - dragStateTime > DRAG_CANCEL_WINDOW) {
+    dragState = 'idle';
+    updateStatus(statusElements.drag, "Ready", "#a0a0a0");
+    updateStatus(statusElements.click, "Waiting...", "#a0a0a0");
+  }
+
+  // 'pending' → 'dragging': eye stayed closed past HOLD_THRESHOLD
+  if (dragState === 'pending' && leftClosed && now - leftEyeCloseTime >= HOLD_THRESHOLD) {
+    dragState = 'dragging';
+    dragStateTime = now;
+    window.electronAPI.mouseDown('left');
+    updateStatus(statusElements.click, "Selecting...", "#f59e0b");
+    updateStatus(statusElements.drag, "Hold eye closed to select", "#f59e0b");
+  }
+
+  // Left eye close edge (was open, now closed)
+  if (leftClosed && rightOpen && !blinkState.left) {
+    blinkState.left = true;
+
+    if (dragState === 'cancelable') {
+      // Cancel selection — click to deselect
+      dragState = 'idle';
+      dragStateTime = now;
+      lastClickTime = now;
       window.electronAPI.mouseClick('left');
-      lastClickTime = Date.now();
+      updateStatus(statusElements.click, "Selection Cancelled", "#ef4444");
+      updateStatus(statusElements.drag, "Ready", "#a0a0a0");
       setTimeout(() => { if (Date.now() - lastClickTime >= 1000) updateStatus(statusElements.click, "Waiting...", "#a0a0a0"); }, 1000);
+    } else if (dragState === 'idle' && now - lastClickTime > CLICK_COOLDOWN) {
+      // Eye just closed — enter pending, decide click vs drag later
+      dragState = 'pending';
+      leftEyeCloseTime = now;
+      lastClickTime = now;
     }
-  } else if (rightClosed && leftOpen) {
-    if (!blinkState.right && Date.now() - lastClickTime > CLICK_COOLDOWN) {
+  }
+
+  // Left eye open edge (was closed, now open)
+  if (leftOpen && blinkState.left) {
+    blinkState.left = false;
+
+    if (dragState === 'pending') {
+      // Opened before HOLD_THRESHOLD → regular left click
+      dragState = 'idle';
+      dragStateTime = now;
+      window.electronAPI.mouseClick('left');
+      updateStatus(statusElements.click, "Left Click", "#4ecca3");
+      setTimeout(() => { if (Date.now() - lastClickTime >= 1000) updateStatus(statusElements.click, "Waiting...", "#a0a0a0"); }, 1000);
+    } else if (dragState === 'dragging') {
+      // End drag, enter cancelable window
+      dragState = 'cancelable';
+      dragStateTime = now;
+      window.electronAPI.mouseUp('left');
+      updateStatus(statusElements.click, "Selected (blink to cancel)", "#4ecca3");
+      updateStatus(statusElements.drag, "Blink left to cancel", "#4ecca3");
+    }
+  }
+
+  // Right eye: right-click (cancels active drag if any)
+  if (rightClosed && leftOpen) {
+    if (!blinkState.right && now - lastClickTime > CLICK_COOLDOWN) {
       blinkState.right = true;
+      lastClickTime = now;
+
+      if (dragState === 'dragging' || dragState === 'pending') {
+        if (dragState === 'dragging') window.electronAPI.mouseUp('left');
+        dragState = 'idle';
+        dragStateTime = now;
+        updateStatus(statusElements.drag, "Ready", "#a0a0a0");
+      }
       updateStatus(statusElements.click, "Right Click", "#667eea");
       window.electronAPI.mouseClick('right');
-      lastClickTime = Date.now();
       setTimeout(() => { if (Date.now() - lastClickTime >= 1000) updateStatus(statusElements.click, "Waiting...", "#a0a0a0"); }, 1000);
     }
   } else {
-    if (leftOpen) blinkState.left = false;
     if (rightOpen) blinkState.right = false;
   }
 }
@@ -164,11 +236,34 @@ function processLandmarks(landmarks) {
   if (Math.abs(rawDY) < DEADZONE) rawDY = 0;
   if (rawDX === 0 && rawDY === 0) return;
 
-  // Scale by sensitivity then apply non-linear acceleration
-  let deltaX = accelerate(rawDX * sensitivity);
-  let deltaY = accelerate(rawDY * sensitivity * 1.3);
+  if (scrollMode) {
+    doScroll(rawDX, rawDY);
+  } else {
+    let deltaX = accelerate(rawDX * sensitivity);
+    let deltaY = accelerate(rawDY * sensitivity * 1.3);
+    moveCursor(deltaX, deltaY);
+  }
+}
 
-  moveCursor(deltaX, deltaY);
+function doScroll(rawDX, rawDY) {
+  if (pendingScroll) return;
+  // Windows MOUSEEVENTF_WHEEL: positive = scroll up, negative = scroll down
+  // rawDY positive = head moved down in camera → scroll DOWN (negative wheel)
+  // rawDY negative = head moved up in camera → scroll UP (positive wheel)
+  let dy = Math.round(-rawDY * sensitivity * SCROLL_SENSITIVITY);
+  let dx = Math.round(-rawDX * sensitivity * SCROLL_SENSITIVITY * 0.5);
+  // Enforce minimum of WHEEL_DELTA (120) so apps register at least one notch
+  if (dy !== 0) dy = Math.sign(dy) * Math.max(Math.abs(dy), 120);
+  if (dx !== 0) dx = Math.sign(dx) * Math.max(Math.abs(dx), 120);
+  // Clamp to reasonable range
+  dy = Math.max(-960, Math.min(960, dy));
+  dx = Math.max(-960, Math.min(960, dx));
+  if (dy === 0 && dx === 0) return;
+
+  pendingScroll = true;
+  window.electronAPI.scroll(dx, dy).then(() => {
+    pendingScroll = false;
+  }).catch(() => { pendingScroll = false; });
 }
 
 function moveCursor(deltaX, deltaY) {
@@ -290,6 +385,11 @@ async function startTracking() {
 
 async function stopTracking() {
   if (camera) camera.stop();
+  if (dragState === 'dragging') window.electronAPI.mouseUp('left');
+  dragState = 'idle';
+  dragStateTime = 0;
+  leftEyeCloseTime = 0;
+  updateStatus(statusElements.drag, "Ready", "#a0a0a0");
   isTracking = false;
   emaX = null; emaY = null;
   lastEmittedX = null; lastEmittedY = null;
@@ -321,6 +421,8 @@ window.addEventListener('load', () => {
   statusElements.speech = document.getElementById('speech-status');
   statusElements.calibration = document.getElementById('calibration-status');
   statusElements.click = document.getElementById('click-status');
+  statusElements.scroll = document.getElementById('scroll-status');
+  statusElements.drag = document.getElementById('drag-status');
   buttons.start = document.getElementById('start-tracking');
   buttons.stop = document.getElementById('stop-tracking');
   buttons.recenter = document.getElementById('recenter');
@@ -341,6 +443,22 @@ window.addEventListener('load', () => {
   if (buttons.stop) { buttons.stop.addEventListener('click', stopTracking); buttons.stop.disabled = true; }
   if (buttons.recenter) { buttons.recenter.addEventListener('click', recenter); buttons.recenter.disabled = true; }
   if (buttons.toggleVideo) { buttons.toggleVideo.addEventListener('click', toggleVideoPreview); buttons.toggleVideo.disabled = true; }
+
+  // Hold Z to enter scroll mode
+  document.addEventListener('keydown', (e) => {
+    if (e.code === 'KeyZ' && !e.repeat) {
+      e.preventDefault();
+      scrollMode = true;
+      updateStatus(statusElements.scroll, 'Scrolling (hold Z)', '#a855f7');
+    }
+  });
+  document.addEventListener('keyup', (e) => {
+    if (e.code === 'KeyZ') {
+      e.preventDefault();
+      scrollMode = false;
+      updateStatus(statusElements.scroll, 'Move to scroll', '#a0a0a0');
+    }
+  });
 
   setTimeout(initializeTracker, 500);
 });
