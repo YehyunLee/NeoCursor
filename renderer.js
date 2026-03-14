@@ -4,96 +4,82 @@ let videoVisible = false;
 
 // Head tracking state
 let centerPoint = null;
-let sensitivity = 15; // How much movement translates to cursor movement (higher = faster)
-const DEADZONE = 0.005; // Ignore tiny movements to reduce jitter
+let sensitivity = 15;
 
-// Advanced smoothing
-let smoothingBuffer = [];
-const SMOOTHING_BUFFER_SIZE = 5;
+// Tiny deadzone on raw landmark delta (normalized coords, ~0.3% of face)
+const DEADZONE = 0.002;
+
+// Exponential moving average — instant direction response, dampens jitter
+const EMA_ALPHA = 0.5;
+let emaX = null;
+let emaY = null;
 let lastEmittedX = null;
 let lastEmittedY = null;
-const SMOOTHING_DEADZONE = 3; // pixels
+const SMOOTHING_DEADZONE = 1; // suppress sub-pixel jitter
 
-const statusElements = {
-  eye: null,
-  speech: null,
-  calibration: null,
-  click: null
-};
+// Cache screen bounds to skip IPC round-trip every frame
+let cachedBounds = null;
+let boundsCacheTime = 0;
+const BOUNDS_CACHE_MS = 5000;
 
-const buttons = {
-  start: null,
-  stop: null,
-  recenter: null,
-  toggleVideo: null
-};
+// Throttle status DOM updates
+let lastStatusUpdate = 0;
+const STATUS_UPDATE_INTERVAL_MS = 250;
 
-// MediaPipe variables
-let faceMesh;
-let camera;
-let videoElement;
-let canvasElement;
-let canvasCtx;
+// Prevent stacking IPC calls
+let pendingMove = false;
+let mouseControlUnavailableShown = false;
 
-// Blink Detection State
-const RIGHT_EYE = [33, 160, 158, 133, 153, 144]; // User's right eye
-const LEFT_EYE = [362, 385, 387, 263, 373, 380]; // User's left eye
+// Non-linear acceleration: small head movements = precision, large = fast jumps
+function accelerate(delta) {
+  const abs = Math.abs(delta);
+  const sign = Math.sign(delta);
+  if (abs < 0.15) return sign * abs * 0.7;
+  if (abs < 0.4)  return sign * (0.105 + (abs - 0.15) * 1.2);
+  return sign * (0.405 + (abs - 0.4) * 2.0);
+}
+
+const statusElements = { eye: null, speech: null, calibration: null, click: null };
+const buttons = { start: null, stop: null, recenter: null, toggleVideo: null };
+
+let faceMesh, camera, videoElement, canvasElement, canvasCtx;
+
+// Blink Detection
+const RIGHT_EYE = [33, 160, 158, 133, 153, 144];
+const LEFT_EYE = [362, 385, 387, 263, 373, 380];
 const BASELINE_LEARN_RATE = 0.03;
 const CLOSED_RATIO = 0.78;
 const OPEN_RATIO = 0.92;
-const CLICK_COOLDOWN = 500; // ms
-
-let blinkState = {
-  left: false,
-  right: false
-};
+const CLICK_COOLDOWN = 500;
+let blinkState = { left: false, right: false };
 let lastClickTime = 0;
 let baselineLeftEAR = 0.28;
 let baselineRightEAR = 0.28;
 
 function updateStatus(element, text, color) {
-  if (element) {
-    element.textContent = text;
-    element.style.color = color;
-  }
+  if (element) { element.textContent = text; element.style.color = color; }
 }
 
-function distance(p1, p2) {
-  return Math.hypot(p1.x - p2.x, p1.y - p2.y);
+function dist(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); }
+
+function calculateEAR(landmarks, idx) {
+  return (dist(landmarks[idx[1]], landmarks[idx[5]]) + dist(landmarks[idx[2]], landmarks[idx[4]]))
+    / (2.0 * dist(landmarks[idx[0]], landmarks[idx[3]]));
 }
 
-function calculateEAR(landmarks, eyeIndices) {
-  const p1 = landmarks[eyeIndices[0]];
-  const p2 = landmarks[eyeIndices[1]];
-  const p3 = landmarks[eyeIndices[2]];
-  const p4 = landmarks[eyeIndices[3]];
-  const p5 = landmarks[eyeIndices[4]];
-  const p6 = landmarks[eyeIndices[5]];
-
-  const p2_p6 = distance(p2, p6);
-  const p3_p5 = distance(p3, p5);
-  const p1_p4 = distance(p1, p4);
-
-  return (p2_p6 + p3_p5) / (2.0 * p1_p4);
-}
-
-function updateEARBaseline(currentBaseline, ear, isClosed) {
-  if (isClosed || !isFinite(ear)) return currentBaseline;
-  const clampedEAR = Math.min(Math.max(ear, 0.15), 0.5);
-  return (currentBaseline * (1 - BASELINE_LEARN_RATE)) + (clampedEAR * BASELINE_LEARN_RATE);
+function updateEARBaseline(baseline, ear, closed) {
+  if (closed || !isFinite(ear)) return baseline;
+  return baseline * (1 - BASELINE_LEARN_RATE) + Math.min(Math.max(ear, 0.15), 0.5) * BASELINE_LEARN_RATE;
 }
 
 function processBlinks(landmarks) {
   if (!isTracking || !landmarks || landmarks.length === 0) return;
-  
   const leftEar = calculateEAR(landmarks, LEFT_EYE);
   const rightEar = calculateEAR(landmarks, RIGHT_EYE);
-  
   const leftClosed = leftEar < baselineLeftEAR * CLOSED_RATIO;
   const rightClosed = rightEar < baselineRightEAR * CLOSED_RATIO;
   const leftOpen = leftEar > baselineLeftEAR * OPEN_RATIO;
   const rightOpen = rightEar > baselineRightEAR * OPEN_RATIO;
-  
   baselineLeftEAR = updateEARBaseline(baselineLeftEAR, leftEar, leftClosed);
   baselineRightEAR = updateEARBaseline(baselineRightEAR, rightEar, rightClosed);
 
@@ -103,11 +89,7 @@ function processBlinks(landmarks) {
       updateStatus(statusElements.click, "Left Click", "#4ecca3");
       window.electronAPI.mouseClick('left');
       lastClickTime = Date.now();
-      setTimeout(() => {
-        if (Date.now() - lastClickTime >= 1000) {
-          updateStatus(statusElements.click, "Waiting...", "#a0a0a0");
-        }
-      }, 1000);
+      setTimeout(() => { if (Date.now() - lastClickTime >= 1000) updateStatus(statusElements.click, "Waiting...", "#a0a0a0"); }, 1000);
     }
   } else if (rightClosed && leftOpen) {
     if (!blinkState.right && Date.now() - lastClickTime > CLICK_COOLDOWN) {
@@ -115,149 +97,113 @@ function processBlinks(landmarks) {
       updateStatus(statusElements.click, "Right Click", "#667eea");
       window.electronAPI.mouseClick('right');
       lastClickTime = Date.now();
-      setTimeout(() => {
-        if (Date.now() - lastClickTime >= 1000) {
-          updateStatus(statusElements.click, "Waiting...", "#a0a0a0");
-        }
-      }, 1000);
+      setTimeout(() => { if (Date.now() - lastClickTime >= 1000) updateStatus(statusElements.click, "Waiting...", "#a0a0a0"); }, 1000);
     }
   } else {
-    // Reset state when both eyes open again
     if (leftOpen) blinkState.left = false;
     if (rightOpen) blinkState.right = false;
   }
 }
 
+// EMA smoothing — reacts to direction changes within one frame
 function smoothCoordinates(x, y) {
-  smoothingBuffer.push({ x, y });
-  
-  if (smoothingBuffer.length > SMOOTHING_BUFFER_SIZE) {
-    smoothingBuffer.shift();
+  if (emaX === null) { emaX = x; emaY = y; }
+  emaX = EMA_ALPHA * x + (1 - EMA_ALPHA) * emaX;
+  emaY = EMA_ALPHA * y + (1 - EMA_ALPHA) * emaY;
+  let tx = Math.round(emaX);
+  let ty = Math.round(emaY);
+  if (lastEmittedX !== null && Math.hypot(tx - lastEmittedX, ty - lastEmittedY) < SMOOTHING_DEADZONE) {
+    return { x: lastEmittedX, y: lastEmittedY };
   }
-  
-  const avgX = smoothingBuffer.reduce((sum, p) => sum + p.x, 0) / smoothingBuffer.length;
-  const avgY = smoothingBuffer.reduce((sum, p) => sum + p.y, 0) / smoothingBuffer.length;
-  
-  let targetX = Math.round(avgX);
-  let targetY = Math.round(avgY);
-  
-  // Apply deadzone to prevent micro-jitters
-  if (lastEmittedX !== null && lastEmittedY !== null) {
-    const dist = Math.hypot(targetX - lastEmittedX, targetY - lastEmittedY);
-    if (dist < SMOOTHING_DEADZONE) {
-      targetX = lastEmittedX;
-      targetY = lastEmittedY;
-    }
-  }
-  
-  lastEmittedX = targetX;
-  lastEmittedY = targetY;
-  
-  return { x: targetX, y: targetY };
+  lastEmittedX = tx;
+  lastEmittedY = ty;
+  return { x: tx, y: ty };
 }
 
 function setCenterPoint(landmarks) {
-  // Use nose tip (landmark 1) as the reference point
   if (landmarks && landmarks.length > 0) {
-    centerPoint = {
-      x: landmarks[1].x,
-      y: landmarks[1].y
-    };
+    centerPoint = { x: landmarks[1].x, y: landmarks[1].y };
     updateStatus(statusElements.calibration, 'Center Set', '#4ecca3');
-    console.log('Center point set to:', centerPoint);
   }
+}
+
+async function refreshBoundsCache() {
+  const r = await window.electronAPI.getScreenBounds();
+  if (r.success) { cachedBounds = r.bounds; boundsCacheTime = Date.now(); }
 }
 
 function processLandmarks(landmarks) {
   if (!isTracking || !landmarks || landmarks.length === 0) return;
-  
-  // If center isn't set yet, set it now
-  if (!centerPoint) {
-    setCenterPoint(landmarks);
-    return;
-  }
-  
-  // Use nose tip (landmark 1) for tracking
+  if (!centerPoint) { setCenterPoint(landmarks); return; }
+
+  // Refresh bounds cache every few seconds
+  if (Date.now() - boundsCacheTime > BOUNDS_CACHE_MS) refreshBoundsCache();
+
   const currentX = landmarks[1].x;
   const currentY = landmarks[1].y;
-  
-  // Calculate relative movement from center
-  let deltaX = (currentX - centerPoint.x) * sensitivity;
-  let deltaY = (currentY - centerPoint.y) * sensitivity * 1.5; // Y axis usually needs more sensitivity
-  
-  // Apply deadzone to raw movement
-  if (Math.abs(currentX - centerPoint.x) < DEADZONE) deltaX = 0;
-  if (Math.abs(currentY - centerPoint.y) < DEADZONE) deltaY = 0;
-  
-  // Move cursor if there's significant movement
-  if (deltaX !== 0 || deltaY !== 0) {
-    moveCursor(deltaX, deltaY);
-  }
+
+  let rawDX = currentX - centerPoint.x;
+  let rawDY = currentY - centerPoint.y;
+  if (Math.abs(rawDX) < DEADZONE) rawDX = 0;
+  if (Math.abs(rawDY) < DEADZONE) rawDY = 0;
+  if (rawDX === 0 && rawDY === 0) return;
+
+  // Scale by sensitivity then apply non-linear acceleration
+  let deltaX = accelerate(rawDX * sensitivity);
+  let deltaY = accelerate(rawDY * sensitivity * 1.3);
+
+  moveCursor(deltaX, deltaY);
 }
 
-async function moveCursor(deltaX, deltaY) {
-  try {
-    const result = await window.electronAPI.getScreenBounds();
-    if (result.success) {
-      // For head tracking, we map the relative movement to screen space
-      // We assume the user wants to stay roughly centered and map small head 
-      // movements to full screen coverage
-      
-      const screenWidth = result.bounds.width;
-      const screenHeight = result.bounds.height;
-      
-      // Calculate absolute position based on center of screen + scaled delta
-      // Note: we invert X because camera is mirrored
-      let targetX = result.bounds.x + (screenWidth / 2) - (deltaX * screenWidth);
-      let targetY = result.bounds.y + (screenHeight / 2) + (deltaY * screenHeight);
-      
-      // Clamp to screen bounds
-      targetX = Math.max(result.bounds.x, Math.min(result.bounds.x + screenWidth, targetX));
-      targetY = Math.max(result.bounds.y, Math.min(result.bounds.y + screenHeight, targetY));
-      
-      const smoothed = smoothCoordinates(targetX, targetY);
-      
-      const moveResult = await window.electronAPI.moveCursor(smoothed.x, smoothed.y);
-      
-      if (moveResult && moveResult.paused) {
-        updateStatus(statusElements.eye, `Paused (Manual Override)`, '#f39c12');
-        // Reset center point to avoid sudden jumps when tracking resumes
-        centerPoint = null; 
-      } else {
+function moveCursor(deltaX, deltaY) {
+  if (!cachedBounds || pendingMove) return;
+
+  const { x: bx, y: by, width: sw, height: sh } = cachedBounds;
+  let targetX = bx + (sw / 2) - (deltaX * sw);
+  let targetY = by + (sh / 2) + (deltaY * sh);
+  targetX = Math.max(bx, Math.min(bx + sw - 1, targetX));
+  targetY = Math.max(by, Math.min(by + sh - 1, targetY));
+
+  const smoothed = smoothCoordinates(targetX, targetY);
+
+  pendingMove = true;
+  window.electronAPI.moveCursor(smoothed.x, smoothed.y).then((r) => {
+    pendingMove = false;
+    if (r && r.unavailable) {
+      if (!mouseControlUnavailableShown) {
+        mouseControlUnavailableShown = true;
+        updateStatus(statusElements.eye, 'Mouse control unavailable (e.g. Windows ARM64)', '#e74c3c');
+      }
+    } else if (r && r.paused) {
+      updateStatus(statusElements.eye, 'Paused (Manual Override)', '#f39c12');
+      centerPoint = null;
+    } else {
+      const now = Date.now();
+      if (now - lastStatusUpdate > STATUS_UPDATE_INTERVAL_MS) {
+        lastStatusUpdate = now;
         updateStatus(statusElements.eye, `Tracking (${smoothed.x}, ${smoothed.y})`, '#4ecca3');
       }
     }
-  } catch (err) {
-    console.error('Error moving cursor:', err);
-  }
+  }).catch(() => { pendingMove = false; });
 }
 
 function onResults(results) {
-  // Draw video frame to canvas
   if (videoVisible && canvasCtx) {
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
-    canvasCtx.drawImage(
-        results.image, 0, 0, canvasElement.width, canvasElement.height);
-    
-    // Draw landmarks if found
+    canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
     if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
       for (const landmarks of results.multiFaceLandmarks) {
-        // Draw just the nose tip for feedback
         const nose = landmarks[1];
         canvasCtx.beginPath();
         canvasCtx.arc(nose.x * canvasElement.width, nose.y * canvasElement.height, 5, 0, 2 * Math.PI);
         canvasCtx.fillStyle = '#4ecca3';
         canvasCtx.fill();
-        
-        // Draw center point if set
         if (centerPoint) {
           canvasCtx.beginPath();
           canvasCtx.arc(centerPoint.x * canvasElement.width, centerPoint.y * canvasElement.height, 5, 0, 2 * Math.PI);
           canvasCtx.fillStyle = '#e94560';
           canvasCtx.fill();
-          
-          // Draw line between center and current
           canvasCtx.beginPath();
           canvasCtx.moveTo(centerPoint.x * canvasElement.width, centerPoint.y * canvasElement.height);
           canvasCtx.lineTo(nose.x * canvasElement.width, nose.y * canvasElement.height);
@@ -268,7 +214,7 @@ function onResults(results) {
     }
     canvasCtx.restore();
   }
-  
+
   if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
     const landmarks = results.multiFaceLandmarks[0];
     processLandmarks(landmarks);
@@ -278,25 +224,20 @@ function onResults(results) {
 
 async function initializeTracker() {
   updateStatus(statusElements.eye, 'Loading MediaPipe...', '#f39c12');
-  
   try {
     videoElement = document.getElementsByClassName('input_video')[0];
     canvasElement = document.getElementsByClassName('output_canvas')[0];
     canvasCtx = canvasElement.getContext('2d');
-    
-    faceMesh = new FaceMesh({locateFile: (file) => {
-      return `mediapipe/face_mesh/${file}`;
-    }});
-    
+
+    faceMesh = new FaceMesh({ locateFile: (file) => `mediapipe/face_mesh/${file}` });
     faceMesh.setOptions({
       maxNumFaces: 1,
-      refineLandmarks: true, // We need high precision for eye/head tracking
+      refineLandmarks: true,
       minDetectionConfidence: 0.5,
       minTrackingConfidence: 0.5
     });
-    
     faceMesh.onResults(onResults);
-    
+
     updateStatus(statusElements.eye, 'Ready - Click Start', '#a0a0a0');
     console.log('MediaPipe initialized');
   } catch (error) {
@@ -306,34 +247,24 @@ async function initializeTracker() {
 }
 
 async function startTracking() {
-  if (!faceMesh) {
-    updateStatus(statusElements.eye, 'Tracker not loaded', '#e94560');
-    return;
-  }
-
+  if (!faceMesh) { updateStatus(statusElements.eye, 'Tracker not loaded', '#e94560'); return; }
   try {
     updateStatus(statusElements.eye, 'Starting camera...', '#f39c12');
-    
     camera = new Camera(videoElement, {
-      onFrame: async () => {
-        await faceMesh.send({image: videoElement});
-      },
-      width: 640,
-      height: 480
+      onFrame: async () => { await faceMesh.send({ image: videoElement }); },
+      width: 320,
+      height: 240
     });
-    
+    await refreshBoundsCache();
     await camera.start();
     isTracking = true;
-    centerPoint = null; // Reset center on start
-    
+    centerPoint = null;
     updateStatus(statusElements.eye, 'Tracking Active', '#4ecca3');
     updateStatus(statusElements.calibration, 'Look at center of screen...', '#f39c12');
-    
     if (buttons.start) buttons.start.disabled = true;
     if (buttons.stop) buttons.stop.disabled = false;
     if (buttons.recenter) buttons.recenter.disabled = false;
     if (buttons.toggleVideo) buttons.toggleVideo.disabled = false;
-    
   } catch (error) {
     console.error('Error starting camera:', error);
     updateStatus(statusElements.eye, 'Camera Error: ' + error.message, '#e94560');
@@ -342,19 +273,14 @@ async function startTracking() {
 }
 
 async function stopTracking() {
-  if (camera) {
-    camera.stop();
-  }
-  
+  if (camera) camera.stop();
   isTracking = false;
-  smoothingBuffer = [];
-  lastEmittedX = null;
-  lastEmittedY = null;
+  emaX = null; emaY = null;
+  lastEmittedX = null; lastEmittedY = null;
   centerPoint = null;
-  
+  pendingMove = false;
   updateStatus(statusElements.eye, 'Stopped', '#a0a0a0');
   updateStatus(statusElements.calibration, 'Not Set', '#a0a0a0');
-  
   if (buttons.start) buttons.start.disabled = false;
   if (buttons.stop) buttons.stop.disabled = true;
   if (buttons.recenter) buttons.recenter.disabled = true;
@@ -362,24 +288,16 @@ async function stopTracking() {
 }
 
 function recenter() {
-  if (!isTracking) {
-    alert('Please start tracking first');
-    return;
-  }
-  
+  if (!isTracking) { alert('Please start tracking first'); return; }
   centerPoint = null;
+  emaX = null; emaY = null;
   updateStatus(statusElements.calibration, 'Look at center of screen...', '#f39c12');
 }
 
 function toggleVideoPreview() {
   videoVisible = !videoVisible;
   const container = document.getElementById('video-container');
-  if (videoVisible) {
-    container.classList.add('visible');
-  } else {
-    container.classList.remove('visible');
-  }
-  console.log('Video preview', videoVisible ? 'shown' : 'hidden');
+  container.classList.toggle('visible', videoVisible);
 }
 
 window.addEventListener('load', () => {
@@ -387,48 +305,26 @@ window.addEventListener('load', () => {
   statusElements.speech = document.getElementById('speech-status');
   statusElements.calibration = document.getElementById('calibration-status');
   statusElements.click = document.getElementById('click-status');
-  
   buttons.start = document.getElementById('start-tracking');
   buttons.stop = document.getElementById('stop-tracking');
   buttons.recenter = document.getElementById('recenter');
   buttons.toggleVideo = document.getElementById('toggle-video');
-  
+
   const sensitivitySlider = document.getElementById('sensitivity-slider');
   const sensitivityValue = document.getElementById('sensitivity-value');
-  
-  // Initialize sensitivity from slider default
   if (sensitivitySlider) {
     sensitivity = parseInt(sensitivitySlider.value);
-    
     sensitivitySlider.addEventListener('input', (e) => {
       sensitivity = parseInt(e.target.value);
-      if (sensitivityValue) {
-        sensitivityValue.textContent = sensitivity;
-      }
+      if (sensitivityValue) sensitivityValue.textContent = sensitivity;
     });
   }
-  
+
   updateStatus(statusElements.speech, 'Coming Soon', '#a0a0a0');
-  
-  if (buttons.start) {
-    buttons.start.addEventListener('click', startTracking);
-  }
-  
-  if (buttons.stop) {
-    buttons.stop.addEventListener('click', stopTracking);
-    buttons.stop.disabled = true;
-  }
-  
-  if (buttons.recenter) {
-    buttons.recenter.addEventListener('click', recenter);
-    buttons.recenter.disabled = true;
-  }
-  
-  if (buttons.toggleVideo) {
-    buttons.toggleVideo.addEventListener('click', toggleVideoPreview);
-    buttons.toggleVideo.disabled = true;
-  }
-  
-  // Initialize MediaPipe shortly after load
-  setTimeout(initializeTracker, 1000);
+  if (buttons.start) buttons.start.addEventListener('click', startTracking);
+  if (buttons.stop) { buttons.stop.addEventListener('click', stopTracking); buttons.stop.disabled = true; }
+  if (buttons.recenter) { buttons.recenter.addEventListener('click', recenter); buttons.recenter.disabled = true; }
+  if (buttons.toggleVideo) { buttons.toggleVideo.addEventListener('click', toggleVideoPreview); buttons.toggleVideo.disabled = true; }
+
+  setTimeout(initializeTracker, 500);
 });
