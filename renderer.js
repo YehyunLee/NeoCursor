@@ -383,6 +383,11 @@ async function startTracking() {
     if (buttons.stop) buttons.stop.disabled = false;
     if (buttons.recenter) buttons.recenter.disabled = false;
     if (buttons.toggleVideo) buttons.toggleVideo.disabled = false;
+
+    // Automatically enable speech mode when tracking starts
+    if (!isSpeechActive) {
+      await startSpeech();
+    }
   } catch (error) {
     console.error('Error starting camera:', error);
     updateStatus(statusElements.eye, 'Camera Error: ' + error.message, '#e94560');
