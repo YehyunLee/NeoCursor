@@ -6,9 +6,50 @@ Accepts a video file path and outputs the transcribed text.
 import os
 import sys
 import json
+import glob
+import subprocess
+import tempfile
 
 # Suppress TensorFlow warnings
 os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+
+
+def frames_dir_to_video(frames_dir, fps=16):
+    """Convert a directory of frame_NNNN.jpg files into a temp .mp4 via ffmpeg or opencv."""
+    pattern = os.path.join(frames_dir, 'frame_*.jpg')
+    frames = sorted(glob.glob(pattern))
+    if not frames:
+        return None
+
+    out_path = os.path.join(tempfile.gettempdir(), 'vsr_assembled.mp4')
+
+    # Try ffmpeg first
+    try:
+        subprocess.run(
+            ['ffmpeg', '-y', '-framerate', str(fps),
+             '-i', os.path.join(frames_dir, 'frame_%04d.jpg'),
+             '-c:v', 'libx264', '-pix_fmt', 'yuv420p', out_path],
+            check=True, capture_output=True
+        )
+        return out_path
+    except (FileNotFoundError, subprocess.CalledProcessError):
+        pass
+
+    # Fallback: opencv
+    try:
+        import cv2
+        first = cv2.imread(frames[0])
+        h, w = first.shape[:2]
+        fourcc = cv2.VideoWriter_fourcc(*'mp4v')
+        writer = cv2.VideoWriter(out_path, fourcc, fps, (w, h))
+        for f in frames:
+            writer.write(cv2.imread(f))
+        writer.release()
+        return out_path
+    except ImportError:
+        pass
+
+    return None
 
 def find_vsr_engine():
     """Locate the VSR engine directory containing pipelines/pipeline.py"""
@@ -31,6 +72,13 @@ def main():
     if not os.path.exists(video_path):
         print(json.dumps({"error": f"Video file not found: {video_path}"}))
         sys.exit(1)
+    
+    # If given a directory of frames, assemble into a temp video first
+    if os.path.isdir(video_path):
+        video_path = frames_dir_to_video(video_path)
+        if video_path is None:
+            print(json.dumps({"error": "Failed to assemble frames into video. Install ffmpeg or provide a video file."}))
+            sys.exit(1)
     
     # Find and load VSR engine
     engine_path = find_vsr_engine()
@@ -84,6 +132,8 @@ def main():
         }))
         
     except Exception as e:
+        import traceback
+        traceback.print_exc(file=sys.stderr)
         print(json.dumps({"error": f"Inference failed: {str(e)}"}))
         sys.exit(1)
 
