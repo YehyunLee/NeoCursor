@@ -2,6 +2,7 @@
 const fs = require('fs');
 const path = require('path');
 const { spawn } = require('child_process');
+const LLMImprover = require('./llm-improver');
 
 class VSRHandler {
   constructor() {
@@ -11,10 +12,19 @@ class VSRHandler {
     this.minFrames = 24; // Minimum 1.5 seconds at 16fps
     this.outputDir = path.join(__dirname, 'vsr_temp');
     this.pythonProcess = null;
+    this.llmImprover = null;
     
     // Ensure temp directory exists
     if (!fs.existsSync(this.outputDir)) {
       fs.mkdirSync(this.outputDir, { recursive: true });
+    }
+    
+    // Initialize LLM improver with API key from environment
+    const apiKey = process.env.GEMINI_API_KEY || null;
+    if (apiKey) {
+      this.llmImprover = new LLMImprover(apiKey);
+    } else {
+      console.log('[VSR] No GEMINI_API_KEY found. VSR transcripts will not be improved.');
     }
   }
 
@@ -57,12 +67,26 @@ class VSRHandler {
       console.log(`[VSR] Video saved to ${videoPath}`);
       
       // Process with VSR engine (placeholder for now)
-      const result = await this.processVideo(videoPath);
+      const rawResult = await this.processVideo(videoPath);
+      console.log(`[VSR] Raw inference: "${rawResult.text}"`);
+      
+      // Improve transcript with LLM
+      let improvedResult;
+      if (this.llmImprover) {
+        improvedResult = await this.llmImprover.improveTranscript(rawResult.text);
+        console.log(`[VSR] Final result: "${improvedResult}"`);
+      } else {
+        improvedResult = rawResult.text;
+      }
       
       // Cleanup
       this.recordedFrames = [];
       
-      return result;
+      return {
+        text: improvedResult,
+        confidence: rawResult.confidence,
+        videoPath: videoPath
+      };
     } catch (error) {
       console.error('[VSR] Error processing recording:', error);
       this.recordedFrames = [];
