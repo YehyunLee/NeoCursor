@@ -113,18 +113,97 @@ class VSRHandler {
   }
 
   async processVideo(videoPath) {
-    // Placeholder for VSR processing
-    // In production, this would call the actual VSR inference engine
-    
-    return new Promise((resolve) => {
-      // Simulate processing delay
-      setTimeout(() => {
+    return new Promise((resolve, reject) => {
+      // Determine Python executable (try python3 first, fallback to python)
+      const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+      const scriptPath = path.join(__dirname, 'vsr_inference.py');
+      
+      console.log(`[VSR] Running inference: ${pythonCmd} ${scriptPath} ${videoPath}`);
+      
+      const pythonProcess = spawn(pythonCmd, [scriptPath, videoPath]);
+      
+      let stdout = '';
+      let stderr = '';
+      
+      pythonProcess.stdout.on('data', (data) => {
+        stdout += data.toString();
+      });
+      
+      pythonProcess.stderr.on('data', (data) => {
+        stderr += data.toString();
+      });
+      
+      pythonProcess.on('close', (code) => {
+        if (code !== 0) {
+          console.error(`[VSR] Python process exited with code ${code}`);
+          console.error(`[VSR] stderr: ${stderr}`);
+          
+          // Try to parse error from stdout
+          try {
+            const errorResult = JSON.parse(stdout);
+            if (errorResult.error) {
+              resolve({
+                text: `Error: ${errorResult.error}`,
+                confidence: 0.0,
+                videoPath: videoPath
+              });
+              return;
+            }
+          } catch (e) {
+            // Not JSON, use raw error
+          }
+          
+          resolve({
+            text: '[VSR Engine Error - Check console for details]',
+            confidence: 0.0,
+            videoPath: videoPath
+          });
+          return;
+        }
+        
+        try {
+          const result = JSON.parse(stdout);
+          
+          if (result.success) {
+            console.log(`[VSR] Inference successful: "${result.text}"`);
+            resolve({
+              text: result.text || '[No speech detected]',
+              confidence: 1.0,
+              videoPath: videoPath
+            });
+          } else if (result.error) {
+            console.error(`[VSR] Inference error: ${result.error}`);
+            resolve({
+              text: `Error: ${result.error}`,
+              confidence: 0.0,
+              videoPath: videoPath
+            });
+          } else {
+            resolve({
+              text: '[Unexpected response format]',
+              confidence: 0.0,
+              videoPath: videoPath
+            });
+          }
+        } catch (error) {
+          console.error(`[VSR] Failed to parse Python output: ${error}`);
+          console.error(`[VSR] stdout: ${stdout}`);
+          resolve({
+            text: '[Failed to parse VSR output]',
+            confidence: 0.0,
+            videoPath: videoPath
+          });
+        }
+      });
+      
+      pythonProcess.on('error', (error) => {
+        console.error(`[VSR] Failed to start Python process: ${error}`);
         resolve({
-          text: '[VSR Output Placeholder - Engine Not Connected]',
+          text: '[VSR Engine Not Available - Install Python and dependencies]',
           confidence: 0.0,
           videoPath: videoPath
         });
-      }, 500);
+      });
     });
   }
 
