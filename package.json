@@ -33,6 +33,7 @@
     "electron": "^41.0.2"
   },
   "dependencies": {
+    "@google-cloud/speech": "^7.3.0",
     "@mediapipe/camera_utils": "^0.3.1675466862",
     "@mediapipe/face_mesh": "^0.4.1633559619",
     "dotenv": "^17.3.1",

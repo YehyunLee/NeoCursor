@@ -20,6 +20,11 @@ let audioContext = null;
 let micStream = null;
 let audioWorkletNode = null;
 const SPEECH_SAMPLE_RATE = 16000;
+let speechSettings = {
+  engine: 'whisper',
+  whisperModel: 'base',
+  googleAvailable: false
+};
 
 // Head tracking state
 let sensitivity = 15;
@@ -427,6 +432,42 @@ window.addEventListener('load', () => {
     sensitivitySlider.addEventListener('input', (e) => {
       sensitivity = parseInt(e.target.value);
       if (sensitivityValue) sensitivityValue.textContent = sensitivity;
+    });
+  }
+
+  // Load speech settings and setup engine selector
+  const speechEngineSelect = document.getElementById('speech-engine-select');
+  if (speechEngineSelect) {
+    // Load current settings
+    window.electronAPI.getSpeechSettings().then(result => {
+      if (result.success) {
+        speechSettings = result.settings;
+        speechEngineSelect.value = speechSettings.engine;
+        
+        // Disable Google option if not available
+        if (!speechSettings.googleAvailable) {
+          const googleOption = speechEngineSelect.querySelector('option[value="google"]');
+          if (googleOption) {
+            googleOption.textContent = 'Google Speech-to-Text v2 (API key required)';
+            googleOption.disabled = true;
+          }
+        }
+      }
+    });
+    
+    // Handle engine change
+    speechEngineSelect.addEventListener('change', async (e) => {
+      const newEngine = e.target.value;
+      const result = await window.electronAPI.updateSpeechSettings({ engine: newEngine });
+      if (result.success) {
+        speechSettings = result.settings;
+        console.log('[Speech] Engine changed to:', newEngine);
+        updateStatus(statusElements.speech, `Engine: ${newEngine === 'google' ? 'Google' : 'Whisper'}`, '#a0a0a0');
+      } else {
+        console.error('[Speech] Failed to change engine:', result.error);
+        // Revert selection
+        speechEngineSelect.value = speechSettings.engine;
+      }
     });
   }
 

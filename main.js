@@ -5,6 +5,7 @@ const { spawn } = require('child_process');
 const server = require('./server');
 const VSRHandler = require('./vsr-handler');
 const SpeechHandler = require('./speech-handler');
+const GoogleSpeechHandler = require('./google-speech-handler');
 
 let robot = null;
 let useNativeControl = false;
@@ -132,6 +133,13 @@ function sendMouseUp(button) {
 let mainWindow;
 let vsrHandler = null;
 let speechHandler = null;
+let googleSpeechHandler = null;
+let activeSpeechEngine = 'whisper'; // 'whisper' or 'google'
+let speechSettings = {
+  engine: 'whisper',
+  whisperModel: 'base',
+  googleApiKey: process.env.GOOGLE_SPEECH_API_KEY || null
+};
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -285,9 +293,13 @@ app.whenReady().then(() => {
   // Initialize VSR handler
   vsrHandler = new VSRHandler();
   
-  // Initialize Speech handler
+  // Initialize Speech handlers
   speechHandler = new SpeechHandler();
-  speechHandler.onTranscriptReady = (text) => {
+  if (speechSettings.googleApiKey) {
+    googleSpeechHandler = new GoogleSpeechHandler(speechSettings.googleApiKey);
+  }
+  
+  const handleTranscript = (text) => {
     // Type the transcribed text using robotjs or native control
     try {
       if (useNativeControl) {
@@ -310,6 +322,11 @@ app.whenReady().then(() => {
       console.error('[Speech] Error typing text:', err);
     }
   };
+  
+  speechHandler.onTranscriptReady = handleTranscript;
+  if (googleSpeechHandler) {
+    googleSpeechHandler.onTranscriptReady = handleTranscript;
+  }
   
   // Register global shortcuts for VSR
   globalShortcut.register('CommandOrControl+R', () => {
@@ -389,10 +406,21 @@ ipcMain.handle('vsr-stop-recording', async () => {
 // Speech-to-Text IPC Handlers
 ipcMain.handle('speech-start', async (event, { modelSize }) => {
   try {
-    if (!speechHandler) {
-      return { success: false, error: 'Speech handler not initialized' };
+    const engine = speechSettings.engine;
+    
+    if (engine === 'google') {
+      if (!googleSpeechHandler) {
+        return { success: false, error: 'Google Speech handler not initialized. Please set GOOGLE_SPEECH_API_KEY in .env' };
+      }
+      activeSpeechEngine = 'google';
+      return googleSpeechHandler.start();
+    } else {
+      if (!speechHandler) {
+        return { success: false, error: 'Speech handler not initialized' };
+      }
+      activeSpeechEngine = 'whisper';
+      return speechHandler.start(modelSize || speechSettings.whisperModel);
     }
-    return speechHandler.start(modelSize || 'base');
   } catch (error) {
     console.error('Error starting speech:', error);
     return { success: false, error: error.message };
@@ -401,10 +429,12 @@ ipcMain.handle('speech-start', async (event, { modelSize }) => {
 
 ipcMain.handle('speech-stop', async () => {
   try {
-    if (!speechHandler) {
-      return { success: false, error: 'Speech handler not initialized' };
+    if (activeSpeechEngine === 'google' && googleSpeechHandler) {
+      return googleSpeechHandler.stop();
+    } else if (activeSpeechEngine === 'whisper' && speechHandler) {
+      return speechHandler.stop();
     }
-    return speechHandler.stop();
+    return { success: false, error: 'No active speech handler' };
   } catch (error) {
     console.error('Error stopping speech:', error);
     return { success: false, error: error.message };
@@ -413,13 +443,47 @@ ipcMain.handle('speech-stop', async () => {
 
 ipcMain.handle('speech-feed-audio', async (event, { audioBuffer }) => {
   try {
-    if (!speechHandler) {
-      return { success: false, error: 'Speech handler not initialized' };
+    let fed = false;
+    if (activeSpeechEngine === 'google' && googleSpeechHandler) {
+      fed = googleSpeechHandler.feedAudio(Buffer.from(audioBuffer));
+    } else if (activeSpeechEngine === 'whisper' && speechHandler) {
+      fed = speechHandler.feedAudio(Buffer.from(audioBuffer));
     }
-    const fed = speechHandler.feedAudio(Buffer.from(audioBuffer));
     return { success: fed };
   } catch (error) {
     console.error('Error feeding audio:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Settings IPC Handlers
+ipcMain.handle('get-speech-settings', async () => {
+  return {
+    success: true,
+    settings: {
+      ...speechSettings,
+      googleAvailable: !!googleSpeechHandler
+    }
+  };
+});
+
+ipcMain.handle('update-speech-settings', async (event, { engine, whisperModel, googleApiKey }) => {
+  try {
+    if (engine) speechSettings.engine = engine;
+    if (whisperModel) speechSettings.whisperModel = whisperModel;
+    if (googleApiKey !== undefined) {
+      speechSettings.googleApiKey = googleApiKey;
+      // Reinitialize Google handler if API key changed
+      if (googleApiKey) {
+        googleSpeechHandler = new GoogleSpeechHandler(googleApiKey);
+        googleSpeechHandler.onTranscriptReady = speechHandler.onTranscriptReady;
+      } else {
+        googleSpeechHandler = null;
+      }
+    }
+    return { success: true, settings: speechSettings };
+  } catch (error) {
+    console.error('Error updating speech settings:', error);
     return { success: false, error: error.message };
   }
 });

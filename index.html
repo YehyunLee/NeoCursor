@@ -326,6 +326,13 @@
         <label for="sensitivity-slider">Sensitivity • <span id="sensitivity-value">5</span></label>
         <input type="range" id="sensitivity-slider" min="1" max="30" value="5">
       </div>
+      <div class="sensitivity solo">
+        <label for="speech-engine-select">Speech Engine</label>
+        <select id="speech-engine-select" style="flex: 1; padding: 0.5rem; border-radius: 8px; background: var(--panel); color: var(--text); border: 1px solid rgba(255, 255, 255, 0.1); font-family: 'Space Grotesk', sans-serif; cursor: pointer;">
+          <option value="whisper">Faster-Whisper (Offline)</option>
+          <option value="google">Google Speech-to-Text v2</option>
+        </select>
+      </div>
       <div class="controls">
         <button id="start-tracking">Start Tracking</button>
         <button id="stop-tracking" class="danger">Stop Tracking</button>
