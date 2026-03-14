@@ -294,16 +294,14 @@ app.whenReady().then(() => {
   }
   
   const handleTranscript = (text) => {
-    // Type the transcribed text using robotjs or native control
+    // Type the transcribed text - now handled by unified type-text handler
     try {
       if (useNativeControl) {
         if (process.platform === 'darwin') {
-          // Use AppleScript to type on macOS
           const escapedText = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
           spawn('osascript', ['-e', `tell application "System Events" to keystroke "${escapedText}"`]);
           console.log('[Speech] Typed via AppleScript:', text);
         } else if (process.platform === 'linux') {
-          // Use xdotool to type on Linux
           spawn('xdotool', ['type', '--', text]);
           console.log('[Speech] Typed via xdotool:', text);
         } else {
@@ -446,6 +444,35 @@ ipcMain.handle('speech-feed-audio', async (event, { audioBuffer }) => {
     return { success: fed };
   } catch (error) {
     console.error('Error feeding audio:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Type text IPC handler - unified keyboard output for all speech sources
+ipcMain.handle('type-text', async (event, { text }) => {
+  try {
+    if (!text) return { success: false, error: 'No text provided' };
+    
+    if (useNativeControl) {
+      if (process.platform === 'darwin') {
+        // Use AppleScript to type on macOS
+        const escapedText = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        spawn('osascript', ['-e', `tell application "System Events" to keystroke "${escapedText}"`]);
+        console.log('[Type] Typed via AppleScript:', text);
+      } else if (process.platform === 'linux') {
+        // Use xdotool to type on Linux
+        spawn('xdotool', ['type', '--', text]);
+        console.log('[Type] Typed via xdotool:', text);
+      } else {
+        console.log('[Type] Would type:', text);
+      }
+    } else if (robot) {
+      robot.typeString(text);
+      console.log('[Type] Typed via robotjs:', text);
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('[Type] Error typing text:', error);
     return { success: false, error: error.message };
   }
 });
