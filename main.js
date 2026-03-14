@@ -64,28 +64,26 @@ let pauseTrackingUntil = 0;
 
 ipcMain.handle('move-cursor', async (event, { x, y }) => {
   try {
-    let currentPos;
-    
-    if (useNativeControl) {
-      currentPos = screen.getCursorScreenPoint();
-    } else {
-      currentPos = robot.getMousePos();
-    }
-    
-    // Check if user manually moved the mouse
-    if (lastSetPos) {
-      const dist = Math.hypot(currentPos.x - lastSetPos.x, currentPos.y - lastSetPos.y);
-      // If actual mouse position is significantly different from last set position, user moved it
-      if (dist > 15) {
-        pauseTrackingUntil = Date.now() + 2000; // Pause tracking for 2 seconds
+    // Only check for manual override when using robotjs (fast enough)
+    // PowerShell is too slow and causes false positives
+    if (!useNativeControl) {
+      const currentPos = robot.getMousePos();
+      
+      // Check if user manually moved the mouse
+      if (lastSetPos) {
+        const dist = Math.hypot(currentPos.x - lastSetPos.x, currentPos.y - lastSetPos.y);
+        // If actual mouse position is significantly different from last set position, user moved it
+        if (dist > 15) {
+          pauseTrackingUntil = Date.now() + 2000; // Pause tracking for 2 seconds
+        }
       }
-    }
-    
-    // If we are in paused state, return early
-    if (Date.now() < pauseTrackingUntil) {
-      // Keep tracking where the user puts it so we don't immediately pause again when resuming
-      lastSetPos = currentPos;
-      return { success: true, paused: true };
+      
+      // If we are in paused state, return early
+      if (Date.now() < pauseTrackingUntil) {
+        // Keep tracking where the user puts it so we don't immediately pause again when resuming
+        lastSetPos = currentPos;
+        return { success: true, paused: true };
+      }
     }
 
     const displays = screen.getAllDisplays();
@@ -98,9 +96,9 @@ ipcMain.handle('move-cursor', async (event, { x, y }) => {
     if (useNativeControl) {
       // Use OS-specific commands for system-wide mouse control
       if (process.platform === 'win32') {
-        // Windows: Use PowerShell with Windows Forms
-        const psScript = `Add-Type -AssemblyName System.Windows.Forms; [System.Windows.Forms.Cursor]::Position = New-Object System.Drawing.Point(${Math.round(clampedX)}, ${Math.round(clampedY)})`;
-        await execPromise(`powershell -Command "${psScript}"`);
+        // Windows: Use PowerShell with optimized single-line command
+        const psScript = `[System.Windows.Forms.Cursor]::Position = [System.Drawing.Point]::new(${Math.round(clampedX)}, ${Math.round(clampedY)})`;
+        await execPromise(`powershell -NoProfile -ExecutionPolicy Bypass -Command "Add-Type -AssemblyName System.Windows.Forms; ${psScript}"`);
       } else if (process.platform === 'darwin') {
         // macOS: Use cliclick or osascript
         await execPromise(`osascript -e 'tell application "System Events" to set position of mouse to {${Math.round(clampedX)}, ${Math.round(clampedY)}}'`);
@@ -127,11 +125,11 @@ ipcMain.handle('mouse-click', async (event, { button = 'left' }) => {
     if (useNativeControl) {
       // Use OS-specific commands for system-wide mouse clicks
       if (process.platform === 'win32') {
-        // Windows: Use PowerShell with Windows Forms mouse_event
+        // Windows: Use PowerShell with optimized mouse_event
         const mouseButton = button === 'right' ? 8 : 2; // MOUSEEVENTF_LEFTDOWN=2, MOUSEEVENTF_RIGHTDOWN=8
         const mouseButtonUp = button === 'right' ? 16 : 4; // MOUSEEVENTF_LEFTUP=4, MOUSEEVENTF_RIGHTUP=16
         const psScript = `Add-Type -MemberDefinition '[DllImport("user32.dll")] public static extern void mouse_event(int flags, int dx, int dy, int cButtons, int info);' -Name U32 -Namespace W; [W.U32]::mouse_event(${mouseButton}, 0, 0, 0, 0); Start-Sleep -Milliseconds 50; [W.U32]::mouse_event(${mouseButtonUp}, 0, 0, 0, 0)`;
-        await execPromise(`powershell -Command "${psScript}"`);
+        await execPromise(`powershell -NoProfile -ExecutionPolicy Bypass -Command "${psScript}"`);
       } else if (process.platform === 'darwin') {
         // macOS: Use cliclick or osascript
         const clickType = button === 'right' ? 'rc' : 'c';
