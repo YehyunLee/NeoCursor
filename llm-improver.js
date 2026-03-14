@@ -3,7 +3,7 @@ const https = require('https');
 class LLMImprover {
   constructor(apiKey) {
     this.apiKey = apiKey;
-    this.model = 'gemini-1.5-flash-latest';
+    this.model = 'gemini-2.5-flash';
   }
 
   async improveTranscript(rawText) {

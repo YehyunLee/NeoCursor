@@ -473,7 +473,7 @@ window.addEventListener('load', () => {
     applyStabilitySettings();
   }
 
-  updateStatus(statusElements.speech, 'Ready (Cmd+R to record)', '#a0a0a0');
+  updateStatus(statusElements.speech, 'Ready (Ctrl+R to record)', '#a0a0a0');
   if (buttons.start) buttons.start.addEventListener('click', startTracking);
   if (buttons.stop) { buttons.stop.addEventListener('click', stopTracking); buttons.stop.disabled = true; }
   if (buttons.recenter) { buttons.recenter.addEventListener('click', recenter); buttons.recenter.disabled = true; }
@@ -582,14 +582,14 @@ async function stopVSRRecording() {
     // Reset status after 5 seconds
     setTimeout(() => {
       if (!isVSRRecording) {
-        updateStatus(statusElements.speech, 'Ready (Cmd+R to record)', '#a0a0a0');
+        updateStatus(statusElements.speech, 'Ready (Ctrl+R to record)', '#a0a0a0');
       }
     }, 5000);
   } else {
     updateStatus(statusElements.speech, 'Recording too short or error', '#e94560');
     setTimeout(() => {
       if (!isVSRRecording) {
-        updateStatus(statusElements.speech, 'Ready (Cmd+R to record)', '#a0a0a0');
+        updateStatus(statusElements.speech, 'Ready (Ctrl+R to record)', '#a0a0a0');
       }
     }, 3000);
   }
