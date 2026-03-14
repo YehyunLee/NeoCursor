@@ -66,8 +66,11 @@ let faceMesh, camera, videoElement, canvasElement, canvasCtx;
 // Blink Detection - using iris landmarks for more reliable detection
 const RIGHT_EYE = [33, 160, 158, 133, 153, 144];
 const LEFT_EYE = [362, 385, 387, 263, 373, 380];
-const BLINK_CLOSE_THRESHOLD = 0.18;
-const BLINK_OPEN_THRESHOLD = 0.24;
+const EAR_LEARN_RATE = 0.02;
+const EAR_MIN = 0.12;
+const EAR_MAX = 0.45;
+const EAR_CLOSED_RATIO = 0.78;  // ear < baseline * ratio => closed
+const EAR_OPEN_RATIO = 0.94;    // ear > baseline * ratio => open
 const CLICK_COOLDOWN = 800;  // ms between clicks
 let lastLeftClickTime = 0;
 let lastRightClickTime = 0;
@@ -78,6 +81,12 @@ let leftEyeClosed = false;
 let leftEyeCloseTime = 0;
 let dragPending = false;
 const DRAG_HOLD_MS = 400;
+const DRAG_RELEASE_DELAY_MS = 120;
+let leftEyeOpenTime = 0;
+
+// Adaptive EAR baselines
+let baselineLeftEAR = 0.28;
+let baselineRightEAR = 0.28;
 
 function updateStatus(element, text, color) {
   if (element) { element.textContent = text; element.style.color = color; }
@@ -88,6 +97,12 @@ function dist(p1, p2) { return Math.hypot(p1.x - p2.x, p1.y - p2.y); }
 function calculateEAR(landmarks, idx) {
   return (dist(landmarks[idx[1]], landmarks[idx[5]]) + dist(landmarks[idx[2]], landmarks[idx[4]]))
     / (2.0 * dist(landmarks[idx[0]], landmarks[idx[3]]));
+}
+
+function updateBaseline(current, ear, isClosed) {
+  if (isClosed || !isFinite(ear)) return current;
+  const clamped = Math.min(Math.max(ear, EAR_MIN), EAR_MAX);
+  return current * (1 - EAR_LEARN_RATE) + clamped * EAR_LEARN_RATE;
 }
 
 function processBlinks(landmarks) {
@@ -101,13 +116,16 @@ function processBlinks(landmarks) {
     return;
   }
   
-  const leftClosed = leftEar < BLINK_CLOSE_THRESHOLD;
-  const leftFullyOpen = leftEar > BLINK_OPEN_THRESHOLD;
-  const rightClosed = rightEar < BLINK_CLOSE_THRESHOLD;
-  const rightFullyOpen = rightEar > BLINK_OPEN_THRESHOLD;
+  const leftClosed = leftEar < baselineLeftEAR * EAR_CLOSED_RATIO;
+  const leftOpen = leftEar > baselineLeftEAR * EAR_OPEN_RATIO;
+  const rightClosed = rightEar < baselineRightEAR * EAR_CLOSED_RATIO;
+  const rightOpen = rightEar > baselineRightEAR * EAR_OPEN_RATIO;
+  
+  baselineLeftEAR = updateBaseline(baselineLeftEAR, leftEar, leftClosed);
+  baselineRightEAR = updateBaseline(baselineRightEAR, rightEar, rightClosed);
   
   // Left eye press & hold for drag
-  if (leftClosed && rightFullyOpen) {
+  if (leftClosed && rightOpen) {
     if (!leftEyeClosed) {
       leftEyeClosed = true;
       leftEyeCloseTime = now;
@@ -118,21 +136,28 @@ function processBlinks(landmarks) {
         isDragging = true;
         window.electronAPI.mouseDown('left');
         updateStatus(statusElements.click, "Dragging...", "#f59e0b");
-        updateStatus(statusElements.drag, "Close left eye to release", "#f59e0b");
+        updateStatus(statusElements.drag, "Hold left eye closed", "#f59e0b");
       }
     }
-  } else if (leftFullyOpen) {
+  } else if (leftOpen) {
     if (leftEyeClosed) {
       leftEyeClosed = false;
       dragPending = false;
+      leftEyeOpenTime = now;
       if (isDragging) {
-        isDragging = false;
-        window.electronAPI.mouseUp('left');
-        updateStatus(statusElements.click, "Released", "#4ecca3");
-        updateStatus(statusElements.drag, "Ready", "#a0a0a0");
         setTimeout(() => {
-          updateStatus(statusElements.click, "Waiting...", "#a0a0a0");
-        }, 1000);
+          if (!leftEyeClosed && Date.now() - leftEyeOpenTime >= DRAG_RELEASE_DELAY_MS) {
+            isDragging = false;
+            window.electronAPI.mouseUp('left');
+            updateStatus(statusElements.click, "Released", "#4ecca3");
+            updateStatus(statusElements.drag, "Ready", "#a0a0a0");
+            setTimeout(() => {
+              if (Date.now() - leftEyeOpenTime >= 800) {
+                updateStatus(statusElements.click, "Waiting...", "#a0a0a0");
+              }
+            }, 800);
+          }
+        }, DRAG_RELEASE_DELAY_MS);
       } else if (now - lastLeftClickTime > CLICK_COOLDOWN) {
         window.electronAPI.mouseClick('left');
         lastLeftClickTime = now;
@@ -147,7 +172,7 @@ function processBlinks(landmarks) {
   }
   
   // Right eye wink = right click (disabled while dragging)
-  if (!isDragging && rightClosed && leftFullyOpen) {
+  if (!isDragging && rightClosed && leftOpen) {
     if (now - lastRightClickTime > CLICK_COOLDOWN) {
       window.electronAPI.mouseClick('right');
       lastRightClickTime = now;
