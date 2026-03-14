@@ -1,6 +1,6 @@
 const { contextBridge, ipcRenderer } = require('electron');
 
 contextBridge.exposeInMainWorld('electronAPI', {
-  // Add IPC methods here as needed
-  // Example: sendMessage: (message) => ipcRenderer.send('message', message)
+  moveCursor: (x, y) => ipcRenderer.invoke('move-cursor', { x, y }),
+  mouseClick: (button = 'left') => ipcRenderer.invoke('mouse-click', { button })
 });
