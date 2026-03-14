@@ -23,6 +23,7 @@
     "electron": "^41.0.2"
   },
   "dependencies": {
+    "express": "^5.2.1",
     "robotjs": "^0.7.0",
     "webgazer": "^3.5.3"
   }

@@ -1,6 +1,7 @@
 const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('path');
 const robot = require('robotjs');
+const server = require('./server');
 
 let mainWindow;
 
@@ -15,7 +16,8 @@ function createWindow() {
     }
   });
 
-  mainWindow.loadFile('index.html');
+  // Load from localhost server (required for WebGazer HTTPS requirement)
+  mainWindow.loadURL('http://localhost:3000');
 
   // Open DevTools in development
   if (process.env.NODE_ENV === 'development') {
