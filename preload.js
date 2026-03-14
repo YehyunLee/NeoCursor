@@ -11,5 +11,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   vsrStartRecording: () => ipcRenderer.invoke('vsr-start-recording'),
   vsrAddFrame: (frameData) => ipcRenderer.invoke('vsr-add-frame', { frameData }),
   vsrStopRecording: () => ipcRenderer.invoke('vsr-stop-recording'),
-  onToggleVSRRecording: (callback) => ipcRenderer.on('toggle-vsr-recording', callback)
+  onToggleVSRRecording: (callback) => ipcRenderer.on('toggle-vsr-recording', callback),
+  speechStart: (modelSize) => ipcRenderer.invoke('speech-start', { modelSize }),
+  speechStop: () => ipcRenderer.invoke('speech-stop'),
+  speechFeedAudio: (audioBuffer) => ipcRenderer.invoke('speech-feed-audio', { audioBuffer })
 });

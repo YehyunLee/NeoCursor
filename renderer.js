@@ -14,6 +14,13 @@ const VSR_CAPTURE_WIDTH = CAMERA_WIDTH;
 let vsrCanvas = null;
 let vsrCanvasCtx = null;
 
+// Speech-to-Text state
+let isSpeechActive = false;
+let audioContext = null;
+let micStream = null;
+let audioWorkletNode = null;
+const SPEECH_SAMPLE_RATE = 16000;
+
 // Head tracking state
 let sensitivity = 15;
 
@@ -60,8 +67,8 @@ function accelerate(delta) {
   return sign * (0.378 + (abs - 0.45) * 1.4);                    // cap large jumps
 }
 
-const statusElements = { eye: null, speech: null, calibration: null, click: null, scroll: null, drag: null };
-const buttons = { start: null, stop: null, recenter: null, toggleVideo: null };
+const statusElements = { eye: null, speech: null, vsr: null, calibration: null, click: null, scroll: null, drag: null };
+const buttons = { start: null, stop: null, recenter: null, toggleVideo: null, toggleSpeech: null };
 
 let faceMesh, camera, videoElement, canvasElement, canvasCtx;
 
@@ -402,6 +409,7 @@ function toggleVideoPreview() {
 window.addEventListener('load', () => {
   statusElements.eye = document.getElementById('eye-status');
   statusElements.speech = document.getElementById('speech-status');
+  statusElements.vsr = document.getElementById('vsr-status');
   statusElements.calibration = document.getElementById('calibration-status');
   statusElements.click = document.getElementById('click-status');
   statusElements.scroll = document.getElementById('scroll-status');
@@ -410,6 +418,7 @@ window.addEventListener('load', () => {
   buttons.stop = document.getElementById('stop-tracking');
   buttons.recenter = document.getElementById('recenter');
   buttons.toggleVideo = document.getElementById('toggle-video');
+  buttons.toggleSpeech = document.getElementById('toggle-speech');
 
   const sensitivitySlider = document.getElementById('sensitivity-slider');
   const sensitivityValue = document.getElementById('sensitivity-value');
@@ -421,11 +430,12 @@ window.addEventListener('load', () => {
     });
   }
 
-  updateStatus(statusElements.speech, 'Ready (Ctrl+R to record)', '#a0a0a0');
+  updateStatus(statusElements.vsr, 'Ready (Ctrl+R to record)', '#a0a0a0');
   if (buttons.start) buttons.start.addEventListener('click', startTracking);
   if (buttons.stop) { buttons.stop.addEventListener('click', stopTracking); buttons.stop.disabled = true; }
   if (buttons.recenter) { buttons.recenter.addEventListener('click', recenter); buttons.recenter.disabled = true; }
   if (buttons.toggleVideo) { buttons.toggleVideo.addEventListener('click', toggleVideoPreview); buttons.toggleVideo.disabled = true; }
+  if (buttons.toggleSpeech) buttons.toggleSpeech.addEventListener('click', toggleSpeech);
 
   // Hold Z to enter scroll mode
   document.addEventListener('keydown', (e) => {
@@ -474,7 +484,7 @@ async function startVSRRecording() {
 
   isVSRRecording = true;
   vsrFrameCount = 0;
-  updateStatus(statusElements.speech, 'Recording...', '#e94560');
+  updateStatus(statusElements.vsr, 'Recording...', '#e94560');
   console.log('[VSR] Recording started');
 
   // Lazily create a reusable capture canvas scaled to VSR_CAPTURE_WIDTH
@@ -500,7 +510,7 @@ async function startVSRRecording() {
       vsrFrameCount++;
 
       if (vsrFrameCount % 4 === 0) {
-        updateStatus(statusElements.speech, `Recording... (${vsrFrameCount} frames)`, '#e94560');
+        updateStatus(statusElements.vsr, `Recording... (${vsrFrameCount} frames)`, '#e94560');
       }
     } catch (error) {
       console.error('[VSR] Error capturing frame:', error);
@@ -517,29 +527,137 @@ async function stopVSRRecording() {
     vsrFrameInterval = null;
   }
 
-  updateStatus(statusElements.speech, 'Processing...', '#f39c12');
+  updateStatus(statusElements.vsr, 'Processing...', '#f39c12');
   console.log(`[VSR] Recording stopped. Captured ${vsrFrameCount} frames`);
 
   const result = await window.electronAPI.vsrStopRecording();
   if (result.success && result.result) {
     const output = result.result.text || 'No output';
     console.log('[VSR] Output:', output);
-    updateStatus(statusElements.speech, output, '#4ecca3');
+    updateStatus(statusElements.vsr, output, '#4ecca3');
 
     // Reset status after 5 seconds
     setTimeout(() => {
       if (!isVSRRecording) {
-        updateStatus(statusElements.speech, 'Ready (Ctrl+R to record)', '#a0a0a0');
+        updateStatus(statusElements.vsr, 'Ready (Ctrl+R to record)', '#a0a0a0');
       }
     }, 5000);
   } else {
-    updateStatus(statusElements.speech, 'Recording too short or error', '#e94560');
+    updateStatus(statusElements.vsr, 'Recording too short or error', '#e94560');
     setTimeout(() => {
       if (!isVSRRecording) {
-        updateStatus(statusElements.speech, 'Ready (Ctrl+R to record)', '#a0a0a0');
+        updateStatus(statusElements.vsr, 'Ready (Ctrl+R to record)', '#a0a0a0');
       }
     }, 3000);
   }
 
   vsrFrameCount = 0;
+}
+
+// Speech-to-Text Functions
+async function toggleSpeech() {
+  if (isSpeechActive) {
+    await stopSpeech();
+  } else {
+    await startSpeech();
+  }
+}
+
+async function startSpeech() {
+  try {
+    updateStatus(statusElements.speech, 'Starting microphone...', '#f39c12');
+    
+    // Request microphone access
+    micStream = await navigator.mediaDevices.getUserMedia({ 
+      audio: {
+        sampleRate: SPEECH_SAMPLE_RATE,
+        channelCount: 1,
+        echoCancellation: true,
+        noiseSuppression: true
+      } 
+    });
+    
+    // Create audio context
+    audioContext = new (window.AudioContext || window.webkitAudioContext)({
+      sampleRate: SPEECH_SAMPLE_RATE
+    });
+    
+    const source = audioContext.createMediaStreamSource(micStream);
+    
+    // Create ScriptProcessor for audio capture (fallback for older browsers)
+    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+    
+    processor.onaudioprocess = async (e) => {
+      if (!isSpeechActive) return;
+      
+      const inputData = e.inputBuffer.getChannelData(0);
+      
+      // Convert float32 [-1, 1] to int16 PCM
+      const pcmData = new Int16Array(inputData.length);
+      for (let i = 0; i < inputData.length; i++) {
+        const s = Math.max(-1, Math.min(1, inputData[i]));
+        pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+      }
+      
+      // Send to main process
+      await window.electronAPI.speechFeedAudio(pcmData.buffer);
+    };
+    
+    source.connect(processor);
+    processor.connect(audioContext.destination);
+    
+    // Start the speech transcriber in main process
+    const result = await window.electronAPI.speechStart('base');
+    
+    if (result.success) {
+      isSpeechActive = true;
+      updateStatus(statusElements.speech, 'Listening...', '#4ecca3');
+      console.log('[Speech] Started successfully');
+    } else {
+      throw new Error(result.error || 'Failed to start speech');
+    }
+    
+  } catch (error) {
+    console.error('[Speech] Error starting:', error);
+    updateStatus(statusElements.speech, `Error: ${error.message}`, '#e94560');
+    
+    // Cleanup on error
+    if (micStream) {
+      micStream.getTracks().forEach(track => track.stop());
+      micStream = null;
+    }
+    if (audioContext) {
+      audioContext.close();
+      audioContext = null;
+    }
+    isSpeechActive = false;
+  }
+}
+
+async function stopSpeech() {
+  try {
+    updateStatus(statusElements.speech, 'Stopping...', '#f39c12');
+    
+    // Stop audio capture
+    if (micStream) {
+      micStream.getTracks().forEach(track => track.stop());
+      micStream = null;
+    }
+    
+    if (audioContext) {
+      await audioContext.close();
+      audioContext = null;
+    }
+    
+    // Stop transcriber in main process
+    await window.electronAPI.speechStop();
+    
+    isSpeechActive = false;
+    updateStatus(statusElements.speech, 'Ready (Click to start)', '#a0a0a0');
+    console.log('[Speech] Stopped');
+    
+  } catch (error) {
+    console.error('[Speech] Error stopping:', error);
+    updateStatus(statusElements.speech, 'Error stopping', '#e94560');
+  }
 }
