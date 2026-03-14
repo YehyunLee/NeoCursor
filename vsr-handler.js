@@ -8,8 +8,8 @@ class VSRHandler {
   constructor() {
     this.isRecording = false;
     this.recordedFrames = [];
-    this.fps = 16;
-    this.minFrames = 32; // Minimum 2 seconds at 16fps (matches upstream)
+    this.fps = 25; // Match LRS3 capture rate to avoid resampling artifacts
+    this.minFrames = 50; // Minimum 2 seconds at 25fps
     this.outputDir = path.join(__dirname, 'vsr_temp');
     this.serverProcess = null;
     this.serverReady = false;
