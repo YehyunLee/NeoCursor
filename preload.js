@@ -16,5 +16,6 @@ contextBridge.exposeInMainWorld('electronAPI', {
   speechStop: () => ipcRenderer.invoke('speech-stop'),
   speechFeedAudio: (audioBuffer) => ipcRenderer.invoke('speech-feed-audio', { audioBuffer }),
   getSpeechSettings: () => ipcRenderer.invoke('get-speech-settings'),
-  updateSpeechSettings: (settings) => ipcRenderer.invoke('update-speech-settings', settings)
+  updateSpeechSettings: (settings) => ipcRenderer.invoke('update-speech-settings', settings),
+  typeText: (text) => ipcRenderer.invoke('type-text', { text })
 });

@@ -371,6 +371,12 @@ async function startTracking() {
     isTracking = true;
     cursorX = null;
     cursorY = null;
+    
+    // Show camera view by default
+    videoVisible = true;
+    const videoContainer = document.getElementById('video-container');
+    if (videoContainer) videoContainer.classList.add('visible');
+    
     updateStatus(statusElements.eye, 'Tracking Active', '#4ecca3');
     updateStatus(statusElements.calibration, 'Initializing...', '#f39c12');
     if (buttons.start) buttons.start.disabled = true;
@@ -576,6 +582,12 @@ async function stopVSRRecording() {
     const output = result.result.text || 'No output';
     console.log('[VSR] Output:', output);
     updateStatus(statusElements.vsr, output, '#4ecca3');
+    
+    // Send VSR transcript to keyboard (typed output)
+    if (output && output !== 'No output') {
+      await window.electronAPI.typeText(output);
+      console.log('[VSR] Typed output:', output);
+    }
 
     // Reset status after 5 seconds
     setTimeout(() => {
