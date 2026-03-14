@@ -1,8 +1,11 @@
-const { app, BrowserWindow } = require('electron');
+const { app, BrowserWindow, ipcMain, screen } = require('electron');
 const path = require('path');
+const robot = require('robotjs');
+
+let mainWindow;
 
 function createWindow() {
-  const mainWindow = new BrowserWindow({
+  mainWindow = new BrowserWindow({
     width: 1200,
     height: 800,
     webPreferences: {
@@ -18,7 +21,45 @@ function createWindow() {
   if (process.env.NODE_ENV === 'development') {
     mainWindow.webContents.openDevTools();
   }
+
+  // Handle camera permission requests
+  mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
+    if (permission === 'media') {
+      callback(true);
+    } else {
+      callback(false);
+    }
+  });
 }
+
+// IPC handler for moving mouse cursor
+ipcMain.handle('move-cursor', async (event, { x, y }) => {
+  try {
+    const displays = screen.getAllDisplays();
+    const primaryDisplay = displays[0];
+    
+    // Clamp coordinates to screen bounds
+    const clampedX = Math.max(0, Math.min(x, primaryDisplay.size.width - 1));
+    const clampedY = Math.max(0, Math.min(y, primaryDisplay.size.height - 1));
+    
+    robot.moveMouse(clampedX, clampedY);
+    return { success: true };
+  } catch (error) {
+    console.error('Error moving cursor:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC handler for mouse click
+ipcMain.handle('mouse-click', async (event, { button = 'left' }) => {
+  try {
+    robot.mouseClick(button);
+    return { success: true };
+  } catch (error) {
+    console.error('Error clicking mouse:', error);
+    return { success: false, error: error.message };
+  }
+});
 
 app.whenReady().then(() => {
   createWindow();
