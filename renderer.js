@@ -45,9 +45,7 @@ const CLICK_COOLDOWN = 500; // ms
 
 let blinkState = {
   left: false,
-  right: false,
-  both: false,
-  startTime: 0
+  right: false
 };
 let lastClickTime = 0;
 let baselineLeftEAR = 0.28;
@@ -88,8 +86,6 @@ function updateEARBaseline(currentBaseline, ear, isClosed) {
 function processBlinks(landmarks) {
   if (!isTracking || !landmarks || landmarks.length === 0) return;
   
-  const now = Date.now();
-  
   const leftEar = calculateEAR(landmarks, LEFT_EYE);
   const rightEar = calculateEAR(landmarks, RIGHT_EYE);
   
@@ -101,60 +97,34 @@ function processBlinks(landmarks) {
   baselineLeftEAR = updateEARBaseline(baselineLeftEAR, leftEar, leftClosed);
   baselineRightEAR = updateEARBaseline(baselineRightEAR, rightEar, rightClosed);
 
-  if (leftClosed && rightClosed) {
-    if (!blinkState.both) {
-      blinkState.both = true;
-      blinkState.startTime = now;
-    }
-    blinkState.left = true;
-    blinkState.right = true;
-  } else if (leftClosed && rightOpen) {
-    if (!blinkState.left) {
+  if (leftClosed && rightOpen) {
+    if (!blinkState.left && Date.now() - lastClickTime > CLICK_COOLDOWN) {
       blinkState.left = true;
-      blinkState.startTime = now;
+      updateStatus(statusElements.click, "Left Click", "#4ecca3");
+      window.electronAPI.mouseClick('left');
+      lastClickTime = Date.now();
+      setTimeout(() => {
+        if (Date.now() - lastClickTime >= 1000) {
+          updateStatus(statusElements.click, "Waiting...", "#a0a0a0");
+        }
+      }, 1000);
     }
   } else if (rightClosed && leftOpen) {
-    if (!blinkState.right) {
+    if (!blinkState.right && Date.now() - lastClickTime > CLICK_COOLDOWN) {
       blinkState.right = true;
-      blinkState.startTime = now;
+      updateStatus(statusElements.click, "Right Click", "#667eea");
+      window.electronAPI.mouseClick('right');
+      lastClickTime = Date.now();
+      setTimeout(() => {
+        if (Date.now() - lastClickTime >= 1000) {
+          updateStatus(statusElements.click, "Waiting...", "#a0a0a0");
+        }
+      }, 1000);
     }
   } else {
-    // Both eyes are open, check if a blink just finished
-    if (blinkState.left || blinkState.right || blinkState.both) {
-      const duration = now - blinkState.startTime;
-      
-      // Filter out micro-jitters and really long closures
-      if (duration > 50 && duration < 800) {
-        if (now - lastClickTime > CLICK_COOLDOWN) {
-          if (blinkState.both) {
-            updateStatus(statusElements.click, "Both Blink (Ignored)", "#a0a0a0");
-          } else if (blinkState.left) {
-            // User left eye blink -> Left Click
-            updateStatus(statusElements.click, "Left Click", "#4ecca3");
-            window.electronAPI.mouseClick('left');
-            lastClickTime = now;
-          } else if (blinkState.right) {
-            // User right eye blink -> Right Click
-            updateStatus(statusElements.click, "Right Click", "#667eea");
-            window.electronAPI.mouseClick('right');
-            lastClickTime = now;
-          }
-          
-          // Clear status after a moment
-          setTimeout(() => {
-            if (Date.now() - lastClickTime >= 1000) {
-              updateStatus(statusElements.click, "Waiting...", "#a0a0a0");
-            }
-          }, 1000);
-        }
-      }
-      
-      // Reset state
-      blinkState.left = false;
-      blinkState.right = false;
-      blinkState.both = false;
-      blinkState.startTime = 0;
-    }
+    // Reset state when both eyes open again
+    if (leftOpen) blinkState.left = false;
+    if (rightOpen) blinkState.right = false;
   }
 }
 
