@@ -1,14 +1,11 @@
-// WebGazer.js - Enhanced Calibration UX
+// WebGazer.js Implementation - Optimized for Maximum Accuracy
 let isTracking = false;
 let isCalibrated = false;
 let videoVisible = true;
-let calibrationPoints = [];
-let currentCalibrationIndex = 0;
-let clicksPerPoint = 5; // Multiple clicks per point for better accuracy
 
-// Advanced smoothing
+// Advanced smoothing for better accuracy
 let smoothingBuffer = [];
-const SMOOTHING_BUFFER_SIZE = 7;
+const SMOOTHING_BUFFER_SIZE = 5; // Average last 5 predictions
 const CALIBRATION_STORAGE_KEY = 'silentcursor_webgazer_calibration';
 
 const statusElements = {
@@ -31,6 +28,7 @@ function updateStatus(element, text, color) {
   }
 }
 
+// Advanced smoothing using moving average
 function smoothCoordinates(x, y) {
   smoothingBuffer.push({ x, y });
   
@@ -44,160 +42,6 @@ function smoothCoordinates(x, y) {
   return { x: Math.round(avgX), y: Math.round(avgY) };
 }
 
-function create9PointGrid() {
-  const points = [];
-  const margin = 10; // 10% margin from edges
-  
-  // 3x3 grid positions (percentage of screen)
-  const positions = [
-    [margin, margin],           // Top-left
-    [50, margin],               // Top-center
-    [100 - margin, margin],     // Top-right
-    [margin, 50],               // Middle-left
-    [50, 50],                   // Center
-    [100 - margin, 50],         // Middle-right
-    [margin, 100 - margin],     // Bottom-left
-    [50, 100 - margin],         // Bottom-center
-    [100 - margin, 100 - margin] // Bottom-right
-  ];
-  
-  positions.forEach(([x, y], index) => {
-    points.push({
-      id: index,
-      x: x,
-      y: y,
-      clicks: 0,
-      completed: false
-    });
-  });
-  
-  return points;
-}
-
-function showCalibrationOverlay() {
-  const overlay = document.getElementById('calibration-overlay');
-  console.log('Showing calibration overlay:', overlay);
-  overlay.classList.add('active');
-  
-  // Clear any existing points
-  const existingPoints = overlay.querySelectorAll('.calibration-point');
-  existingPoints.forEach(p => p.remove());
-  
-  // Create calibration points
-  calibrationPoints = create9PointGrid();
-  currentCalibrationIndex = 0;
-  
-  console.log('Creating calibration points:', calibrationPoints);
-  
-  calibrationPoints.forEach(point => {
-    const pointEl = document.createElement('div');
-    pointEl.className = 'calibration-point';
-    pointEl.id = `cal-point-${point.id}`;
-    pointEl.style.left = `${point.x}%`;
-    pointEl.style.top = `${point.y}%`;
-    pointEl.style.position = 'absolute';
-    pointEl.style.zIndex = '100000';
-    pointEl.style.display = 'block';
-    pointEl.style.visibility = 'visible';
-    pointEl.style.pointerEvents = 'auto';
-    
-    console.log(`Created point ${point.id} at ${point.x}%, ${point.y}%`, pointEl);
-    
-    pointEl.addEventListener('click', (e) => {
-      console.log('Point clicked!', point.id, e);
-      handleCalibrationClick(point.id);
-    });
-    
-    overlay.appendChild(pointEl);
-  });
-  
-  console.log('Total points in overlay:', overlay.querySelectorAll('.calibration-point').length);
-  
-  updateCalibrationProgress();
-  highlightCurrentPoint();
-}
-
-function highlightCurrentPoint() {
-  // Remove highlight from all points
-  calibrationPoints.forEach(p => {
-    const el = document.getElementById(`cal-point-${p.id}`);
-    if (el) {
-      el.style.transform = 'translate(-50%, -50%) scale(1)';
-      el.style.zIndex = '10000';
-    }
-  });
-  
-  // Highlight current point
-  if (currentCalibrationIndex < calibrationPoints.length) {
-    const currentPoint = calibrationPoints[currentCalibrationIndex];
-    const el = document.getElementById(`cal-point-${currentPoint.id}`);
-    if (el) {
-      el.style.transform = 'translate(-50%, -50%) scale(1.5)';
-      el.style.zIndex = '10002';
-    }
-  }
-}
-
-function handleCalibrationClick(pointId) {
-  const point = calibrationPoints.find(p => p.id === pointId);
-  if (!point || point.completed) return;
-  
-  // Only allow clicking the current point
-  if (pointId !== currentCalibrationIndex) {
-    return;
-  }
-  
-  point.clicks++;
-  
-  const pointEl = document.getElementById(`cal-point-${pointId}`);
-  
-  if (point.clicks >= clicksPerPoint) {
-    point.completed = true;
-    pointEl.classList.add('completed');
-    currentCalibrationIndex++;
-    
-    if (currentCalibrationIndex < calibrationPoints.length) {
-      highlightCurrentPoint();
-      updateCalibrationProgress();
-    } else {
-      completeCalibration();
-    }
-  } else {
-    updateCalibrationProgress();
-  }
-}
-
-function updateCalibrationProgress() {
-  const progressText = document.getElementById('calibration-progress-text');
-  const totalClicks = calibrationPoints.reduce((sum, p) => sum + p.clicks, 0);
-  const totalRequired = calibrationPoints.length * clicksPerPoint;
-  const currentPoint = calibrationPoints[currentCalibrationIndex];
-  
-  if (currentPoint) {
-    progressText.textContent = `Point ${currentCalibrationIndex + 1}/9 - Click ${currentPoint.clicks}/${clicksPerPoint} (Total: ${totalClicks}/${totalRequired})`;
-  }
-}
-
-function completeCalibration() {
-  const overlay = document.getElementById('calibration-overlay');
-  const instructions = document.getElementById('calibration-instructions');
-  
-  instructions.innerHTML = '<h2>Calibration Complete!</h2><p>Starting eye tracking...</p>';
-  
-  setTimeout(() => {
-    overlay.classList.remove('active');
-    // Clear calibration points
-    calibrationPoints.forEach(p => {
-      const el = document.getElementById(`cal-point-${p.id}`);
-      if (el) el.remove();
-    });
-    
-    isCalibrated = true;
-    updateStatus(statusElements.calibration, 'Calibrated (45 points)', '#4ecca3');
-    saveCalibrationData();
-  }, 1500);
-}
-
 async function initializeWebGazer() {
   if (typeof webgazer === 'undefined') {
     console.error('WebGazer not loaded');
@@ -205,21 +49,23 @@ async function initializeWebGazer() {
     return;
   }
 
-  console.log('Initializing WebGazer with enhanced calibration...');
+  console.log('Initializing WebGazer with maximum accuracy settings...');
 
-  // Optimize WebGazer settings for accuracy
+  // Configure WebGazer for maximum accuracy
   webgazer.params.showVideo = true;
   webgazer.params.showFaceOverlay = true;
   webgazer.params.showFaceFeedbackBox = true;
   webgazer.params.showGazeDot = true;
   
+  // Set gaze listener with desktop-wide control
   webgazer.setGazeListener(async function(data, timestamp) {
-    if (data == null || !isTracking || !isCalibrated) {
+    if (data == null || !isTracking) {
       return;
     }
     
     const smoothed = smoothCoordinates(data.x, data.y);
     
+    // Convert window-relative coordinates to screen coordinates
     try {
       const result = await window.electronAPI.getWindowBounds();
       if (result.success) {
@@ -227,23 +73,28 @@ async function initializeWebGazer() {
         const screenY = result.bounds.y + smoothed.y;
         
         await window.electronAPI.moveCursor(screenX, screenY);
-        updateStatus(statusElements.eye, `Tracking (${screenX}, ${screenY})`, '#4ecca3');
+        
+        if (isCalibrated) {
+          updateStatus(statusElements.eye, `Tracking (${screenX}, ${screenY})`, '#4ecca3');
+        }
       }
     } catch (err) {
       console.error('Error moving cursor:', err);
     }
   });
 
+  // Enable all accuracy features
   webgazer.showVideoPreview(true)
     .showPredictionPoints(true)
     .showFaceOverlay(true)
     .showFaceFeedbackBox(true)
-    .applyKalmanFilter(true);
+    .applyKalmanFilter(true); // Kalman filter for smoother predictions
 
-  // Don't load saved calibration - always calibrate fresh
+  // Try to load saved calibration data
+  loadCalibrationData();
+  
   updateStatus(statusElements.eye, 'Ready - Click Start to begin', '#a0a0a0');
-  updateStatus(statusElements.calibration, 'Will calibrate on start', '#a0a0a0');
-  console.log('WebGazer initialized');
+  console.log('WebGazer initialized with accuracy optimizations');
 }
 
 async function startTracking() {
@@ -254,19 +105,40 @@ async function startTracking() {
 
   try {
     updateStatus(statusElements.eye, 'Starting...', '#f39c12');
-    updateStatus(statusElements.calibration, 'Preparing calibration...', '#f39c12');
+    updateStatus(statusElements.calibration, 'Click around the screen to calibrate', '#f39c12');
     
+    // Enter fullscreen for better calibration
     await window.electronAPI.setFullscreen(true);
     
+    // Start WebGazer
     await webgazer.begin();
     isTracking = true;
     
-    updateStatus(statusElements.eye, 'Camera Active', '#4ecca3');
+    updateStatus(statusElements.eye, 'Tracking Active - Calibrating...', '#4ecca3');
     
-    // Wait a moment for camera to stabilize, then always show calibration
+    // Auto-calibrate after 30 clicks or 15 seconds
+    let clickCount = 0;
+    const calibrationHandler = () => {
+      clickCount++;
+      if (clickCount >= 30) {
+        isCalibrated = true;
+        updateStatus(statusElements.calibration, 'Calibrated (30 points)', '#4ecca3');
+        saveCalibrationData();
+        document.removeEventListener('click', calibrationHandler);
+      }
+    };
+    
+    document.addEventListener('click', calibrationHandler);
+    
+    // Auto-mark as calibrated after 15 seconds
     setTimeout(() => {
-      showCalibrationOverlay();
-    }, 1000);
+      if (!isCalibrated) {
+        isCalibrated = true;
+        updateStatus(statusElements.calibration, `Calibrated (${clickCount} points)`, '#4ecca3');
+        saveCalibrationData();
+        document.removeEventListener('click', calibrationHandler);
+      }
+    }, 15000);
     
     if (buttons.start) buttons.start.disabled = true;
     if (buttons.stop) buttons.stop.disabled = false;
@@ -287,10 +159,7 @@ async function stopTracking() {
   isTracking = false;
   smoothingBuffer = [];
   
-  // Hide calibration overlay if visible
-  const overlay = document.getElementById('calibration-overlay');
-  overlay.classList.remove('active');
-  
+  // Exit fullscreen
   await window.electronAPI.setFullscreen(false);
   
   updateStatus(statusElements.eye, 'Stopped', '#a0a0a0');
@@ -307,12 +176,28 @@ function recalibrate() {
     return;
   }
   
+  // Clear calibration data
   clearCalibrationData();
   isCalibrated = false;
   smoothingBuffer = [];
   
-  updateStatus(statusElements.calibration, 'Starting recalibration...', '#f39c12');
-  showCalibrationOverlay();
+  updateStatus(statusElements.calibration, 'Recalibrating - Click around screen', '#f39c12');
+  
+  // Restart calibration process
+  let clickCount = 0;
+  const calibrationHandler = () => {
+    clickCount++;
+    updateStatus(statusElements.calibration, `Calibrating (${clickCount}/30 points)`, '#f39c12');
+    
+    if (clickCount >= 30) {
+      isCalibrated = true;
+      updateStatus(statusElements.calibration, 'Recalibrated (30 points)', '#4ecca3');
+      saveCalibrationData();
+      document.removeEventListener('click', calibrationHandler);
+    }
+  };
+  
+  document.addEventListener('click', calibrationHandler);
 }
 
 function toggleVideoPreview() {
@@ -325,11 +210,14 @@ function toggleVideoPreview() {
   console.log('Video preview', videoVisible ? 'shown' : 'hidden');
 }
 
+// Calibration persistence functions
 function saveCalibrationData() {
   try {
     const calibrationData = {
       timestamp: Date.now(),
-      calibrated: true
+      calibrated: true,
+      // WebGazer stores its own calibration internally
+      // We just save a flag to indicate calibration was completed
     };
     localStorage.setItem(CALIBRATION_STORAGE_KEY, JSON.stringify(calibrationData));
     console.log('Calibration data saved');
@@ -346,8 +234,8 @@ function loadCalibrationData() {
       
       if (calibrationData.calibrated) {
         isCalibrated = true;
-        const timestamp = new Date(calibrationData.timestamp).toLocaleString();
-        updateStatus(statusElements.calibration, `Saved: ${timestamp}`, '#4ecca3');
+        const timestamp = calibrationData.timestamp ? new Date(calibrationData.timestamp).toLocaleString() : 'previous session';
+        updateStatus(statusElements.calibration, `Loaded from ${timestamp}`, '#4ecca3');
         console.log('Loaded calibration from', timestamp);
         return true;
       }
@@ -363,6 +251,7 @@ function clearCalibrationData() {
   console.log('Calibration data cleared');
 }
 
+// Initialize when DOM is ready
 window.addEventListener('load', () => {
   statusElements.eye = document.getElementById('eye-status');
   statusElements.speech = document.getElementById('speech-status');
@@ -396,7 +285,12 @@ window.addEventListener('load', () => {
     buttons.toggleVideo.disabled = true;
   }
   
+  // Wait for WebGazer to fully load
   setTimeout(() => {
+    console.log('Checking for WebGazer...');
+    console.log('window.webgazer:', window.webgazer);
+    console.log('typeof webgazer:', typeof webgazer);
+    
     if (typeof window.webgazer !== 'undefined' || typeof webgazer !== 'undefined') {
       initializeWebGazer();
     } else {

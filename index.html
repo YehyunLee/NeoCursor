@@ -155,6 +155,71 @@
     button.danger {
       background: linear-gradient(135deg, #e94560 0%, #c23866 100%);
     }
+
+    /* Calibration Overlay */
+    #calibration-overlay {
+      position: fixed;
+      top: 0;
+      left: 0;
+      width: 100vw;
+      height: 100vh;
+      background: rgba(0, 0, 0, 0.8);
+      display: none;
+      z-index: 99999;
+    }
+
+    #calibration-overlay.active {
+      display: block;
+    }
+
+    .calibration-point {
+      position: absolute;
+      width: 30px;
+      height: 30px;
+      background: radial-gradient(circle, #667eea 0%, #764ba2 100%);
+      border: 3px solid white;
+      border-radius: 50%;
+      cursor: pointer;
+      transform: translate(-50%, -50%);
+      animation: pulse 1s ease-in-out infinite;
+      box-shadow: 0 0 20px rgba(102, 126, 234, 0.8);
+      z-index: 100000;
+    }
+
+    .calibration-point.completed {
+      background: radial-gradient(circle, #4ecca3 0%, #2ecc71 100%);
+      animation: none;
+    }
+
+    @keyframes pulse {
+      0%, 100% { transform: translate(-50%, -50%) scale(1); }
+      50% { transform: translate(-50%, -50%) scale(1.2); }
+    }
+
+    .calibration-instructions {
+      position: absolute;
+      top: 50%;
+      left: 50%;
+      transform: translate(-50%, -50%);
+      text-align: center;
+      color: white;
+      font-size: 1.5rem;
+      z-index: 100001;
+      pointer-events: none;
+    }
+
+    .calibration-progress {
+      position: absolute;
+      top: 20px;
+      left: 50%;
+      transform: translateX(-50%);
+      background: rgba(255, 255, 255, 0.1);
+      padding: 1rem 2rem;
+      border-radius: 10px;
+      color: white;
+      font-size: 1.2rem;
+      z-index: 100001;
+    }
   </style>
 </head>
 <body>
@@ -201,6 +266,17 @@
 
     <div class="footer">
       <p>Built by Thomas and Amy</p>
+    </div>
+  </div>
+
+  <!-- Calibration Overlay -->
+  <div id="calibration-overlay">
+    <div class="calibration-progress">
+      <span id="calibration-progress-text">Click on each point while looking at it</span>
+    </div>
+    <div class="calibration-instructions" id="calibration-instructions">
+      Look at the glowing point and click it<br>
+      <small>Repeat for all 9 points</small>
     </div>
   </div>
 
