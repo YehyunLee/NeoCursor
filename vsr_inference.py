@@ -54,8 +54,11 @@ def frames_dir_to_video(frames_dir, fps=16):
 def find_vsr_engine():
     """Locate the VSR engine directory containing pipelines/pipeline.py"""
     cur_dir = os.path.dirname(os.path.abspath(__file__))
+    preferred = os.path.join(cur_dir, 'vsr_engine')
+    if os.path.isdir(preferred) and os.path.exists(os.path.join(preferred, 'pipelines', 'pipeline.py')):
+        return preferred
+
     parent_dir = os.path.dirname(cur_dir)
-    
     for dr in os.listdir(parent_dir):
         cand = os.path.join(parent_dir, dr)
         if os.path.isdir(cand) and os.path.exists(os.path.join(cand, 'pipelines', 'pipeline.py')):
