@@ -9,12 +9,14 @@ let vsrFrameCount = 0;
 const VSR_FPS = 16;
 const VSR_FRAME_INTERVAL = 1000 / VSR_FPS;
 
-// Head tracking state
+// Head tracking + stability state
 let centerPoint = null;
 let sensitivity = 15;
+let stabilityLevel = 7; // 1-10 slider
 
-// Deadzone on raw landmark delta (normalized coords)
-const DEADZONE = 0.004;
+let deadzone = 0.004;
+const DEADZONE_MIN = 0.003;
+const DEADZONE_MAX = 0.009;
 
 // Adaptive EMA: alpha varies by movement magnitude
 const EMA_ALPHA_MIN = 0.05;  // more smoothing at rest
@@ -24,7 +26,13 @@ let emaX = null;
 let emaY = null;
 let lastEmittedX = null;
 let lastEmittedY = null;
-const SMOOTHING_DEADZONE = 5; // pixels — suppress rest jitter
+let smoothingDeadzone = 5;
+const SMOOTHING_DEADZONE_MIN = 3;
+const SMOOTHING_DEADZONE_MAX = 12;
+
+let microMovementThreshold = 0.007;
+const MICRO_THRESHOLD_MIN = 0.004;
+const MICRO_THRESHOLD_MAX = 0.012;
 
 // Cache screen bounds to skip IPC round-trip every frame
 let cachedBounds = null;
@@ -126,7 +134,7 @@ function smoothCoordinates(x, y) {
   emaY = alpha * y + (1 - alpha) * emaY;
   let tx = Math.round(emaX);
   let ty = Math.round(emaY);
-  if (lastEmittedX !== null && Math.hypot(tx - lastEmittedX, ty - lastEmittedY) < SMOOTHING_DEADZONE) {
+  if (lastEmittedX !== null && Math.hypot(tx - lastEmittedX, ty - lastEmittedY) < smoothingDeadzone) {
     return { x: lastEmittedX, y: lastEmittedY };
   }
   lastEmittedX = tx;
@@ -167,9 +175,14 @@ function processLandmarks(landmarks) {
 
   let rawDX = currentX - centerPoint.x;
   let rawDY = currentY - centerPoint.y;
-  if (Math.abs(rawDX) < DEADZONE) rawDX = 0;
-  if (Math.abs(rawDY) < DEADZONE) rawDY = 0;
+  if (Math.abs(rawDX) < deadzone) rawDX = 0;
+  if (Math.abs(rawDY) < deadzone) rawDY = 0;
   if (rawDX === 0 && rawDY === 0) return;
+
+  const dominantDelta = Math.max(Math.abs(rawDX), Math.abs(rawDY));
+  if (dominantDelta < microMovementThreshold) {
+    return; // suppress micro jitter
+  }
 
   // Scale by sensitivity then apply non-linear acceleration
   let deltaX = accelerate(rawDX * sensitivity);
@@ -343,6 +356,21 @@ window.addEventListener('load', () => {
     });
   }
 
+  const stabilitySlider = document.getElementById('stability-slider');
+  const stabilityValue = document.getElementById('stability-value');
+  if (stabilitySlider) {
+    stabilityLevel = parseInt(stabilitySlider.value);
+    applyStabilitySettings();
+    stabilitySlider.addEventListener('input', (e) => {
+      stabilityLevel = parseInt(e.target.value);
+      applyStabilitySettings();
+      if (stabilityValue) stabilityValue.textContent = stabilityLevel;
+    });
+    if (stabilityValue) stabilityValue.textContent = stabilityLevel;
+  } else {
+    applyStabilitySettings();
+  }
+
   updateStatus(statusElements.speech, 'Ready (Cmd+R to record)', '#a0a0a0');
   if (buttons.start) buttons.start.addEventListener('click', startTracking);
   if (buttons.stop) { buttons.stop.addEventListener('click', stopTracking); buttons.stop.disabled = true; }
@@ -356,6 +384,13 @@ window.addEventListener('load', () => {
 
   setTimeout(initializeTracker, 500);
 });
+
+function applyStabilitySettings() {
+  const t = (stabilityLevel - 1) / 9; // normalize 0-1
+  deadzone = DEADZONE_MIN + t * (DEADZONE_MAX - DEADZONE_MIN);
+  smoothingDeadzone = Math.round(SMOOTHING_DEADZONE_MIN + t * (SMOOTHING_DEADZONE_MAX - SMOOTHING_DEADZONE_MIN));
+  microMovementThreshold = MICRO_THRESHOLD_MIN + t * (MICRO_THRESHOLD_MAX - MICRO_THRESHOLD_MIN);
+}
 
 // VSR Recording Functions
 async function toggleVSRRecording() {
