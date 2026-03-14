@@ -2,6 +2,13 @@
 let isTracking = false;
 let videoVisible = false;
 
+// VSR Recording state
+let isVSRRecording = false;
+let vsrFrameInterval = null;
+let vsrFrameCount = 0;
+const VSR_FPS = 16;
+const VSR_FRAME_INTERVAL = 1000 / VSR_FPS;
+
 // Head tracking state
 let centerPoint = null;
 let sensitivity = 15;
@@ -336,11 +343,103 @@ window.addEventListener('load', () => {
     });
   }
 
-  updateStatus(statusElements.speech, 'Coming Soon', '#a0a0a0');
+  updateStatus(statusElements.speech, 'Ready (Cmd+R to record)', '#a0a0a0');
   if (buttons.start) buttons.start.addEventListener('click', startTracking);
   if (buttons.stop) { buttons.stop.addEventListener('click', stopTracking); buttons.stop.disabled = true; }
   if (buttons.recenter) { buttons.recenter.addEventListener('click', recenter); buttons.recenter.disabled = true; }
   if (buttons.toggleVideo) { buttons.toggleVideo.addEventListener('click', toggleVideoPreview); buttons.toggleVideo.disabled = true; }
 
+  // Listen for VSR recording toggle from global shortcut
+  window.electronAPI.onToggleVSRRecording(() => {
+    toggleVSRRecording();
+  });
+
   setTimeout(initializeTracker, 500);
 });
+
+// VSR Recording Functions
+async function toggleVSRRecording() {
+  if (!isTracking) {
+    console.log('[VSR] Cannot record - tracking not started');
+    return;
+  }
+
+  if (isVSRRecording) {
+    await stopVSRRecording();
+  } else {
+    await startVSRRecording();
+  }
+}
+
+async function startVSRRecording() {
+  const result = await window.electronAPI.vsrStartRecording();
+  if (!result.success) {
+    console.error('[VSR] Failed to start recording:', result.error);
+    return;
+  }
+
+  isVSRRecording = true;
+  vsrFrameCount = 0;
+  updateStatus(statusElements.speech, 'Recording...', '#e94560');
+  console.log('[VSR] Recording started');
+
+  // Capture frames at VSR_FPS
+  vsrFrameInterval = setInterval(async () => {
+    if (!isVSRRecording || !videoElement) return;
+
+    try {
+      // Create a temporary canvas to capture the current video frame
+      const tempCanvas = document.createElement('canvas');
+      tempCanvas.width = videoElement.videoWidth;
+      tempCanvas.height = videoElement.videoHeight;
+      const tempCtx = tempCanvas.getContext('2d');
+      tempCtx.drawImage(videoElement, 0, 0);
+
+      // Convert to base64 JPEG
+      const frameData = tempCanvas.toDataURL('image/jpeg', 0.7);
+      await window.electronAPI.vsrAddFrame(frameData);
+      vsrFrameCount++;
+
+      // Update status with frame count
+      updateStatus(statusElements.speech, `Recording... (${vsrFrameCount} frames)`, '#e94560');
+    } catch (error) {
+      console.error('[VSR] Error capturing frame:', error);
+    }
+  }, VSR_FRAME_INTERVAL);
+}
+
+async function stopVSRRecording() {
+  if (!isVSRRecording) return;
+
+  isVSRRecording = false;
+  if (vsrFrameInterval) {
+    clearInterval(vsrFrameInterval);
+    vsrFrameInterval = null;
+  }
+
+  updateStatus(statusElements.speech, 'Processing...', '#f39c12');
+  console.log(`[VSR] Recording stopped. Captured ${vsrFrameCount} frames`);
+
+  const result = await window.electronAPI.vsrStopRecording();
+  if (result.success && result.result) {
+    const output = result.result.text || 'No output';
+    console.log('[VSR] Output:', output);
+    updateStatus(statusElements.speech, output, '#4ecca3');
+
+    // Reset status after 5 seconds
+    setTimeout(() => {
+      if (!isVSRRecording) {
+        updateStatus(statusElements.speech, 'Ready (Cmd+R to record)', '#a0a0a0');
+      }
+    }, 5000);
+  } else {
+    updateStatus(statusElements.speech, 'Recording too short or error', '#e94560');
+    setTimeout(() => {
+      if (!isVSRRecording) {
+        updateStatus(statusElements.speech, 'Ready (Cmd+R to record)', '#a0a0a0');
+      }
+    }, 3000);
+  }
+
+  vsrFrameCount = 0;
+}
