@@ -7,6 +7,11 @@ const VSRHandler = require('./vsr-handler');
 let robot = null;
 let useNativeControl = false;
 
+// Keep renderer running even when window is unfocused or occluded
+app.commandLine.appendSwitch('disable-renderer-backgrounding');
+app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
+app.commandLine.appendSwitch('disable-background-timer-throttling');
+
 try {
   robot = require('robotjs');
   console.log('Using robotjs for mouse control');
@@ -86,6 +91,7 @@ function createWindow() {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
       contextIsolation: true,
+      backgroundThrottling: false
     }
   });
 
