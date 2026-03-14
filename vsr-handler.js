@@ -63,20 +63,25 @@ class VSRHandler {
     const videoPath = path.join(this.outputDir, `speech_${timestamp}.mp4`);
     
     try {
+      let t0 = Date.now();
       const savedPath = await this.saveFramesAsVideo(videoPath);
-      console.log(`[VSR] Video saved to ${savedPath}`);
+      console.log(`[VSR] Video saved to ${savedPath} (${Date.now() - t0}ms)`);
       
-      // Process with VSR engine (placeholder for now)
+      t0 = Date.now();
       const rawResult = await this.processVideo(savedPath);
-      console.log(`[VSR] Raw inference: "${rawResult.text}"`);
+      console.log(`[VSR] Raw inference: "${rawResult.text}" (${Date.now() - t0}ms)`);
       
-      // Improve transcript with LLM
+      // Skip LLM for very short outputs or error messages
       let improvedResult;
-      if (this.llmImprover) {
-        improvedResult = await this.llmImprover.improveTranscript(rawResult.text);
-        console.log(`[VSR] Final result: "${improvedResult}"`);
+      const rawText = rawResult.text || '';
+      const wordCount = rawText.trim().split(/\s+/).length;
+      if (this.llmImprover && wordCount > 2 && !rawText.startsWith('Error:') && !rawText.startsWith('[')) {
+        t0 = Date.now();
+        improvedResult = await this.llmImprover.improveTranscript(rawText);
+        console.log(`[VSR] LLM improved (${Date.now() - t0}ms): "${improvedResult}"`);
       } else {
-        improvedResult = rawResult.text;
+        improvedResult = rawText;
+        console.log(`[VSR] Skipped LLM (${wordCount} words)`);
       }
       
       // Cleanup
