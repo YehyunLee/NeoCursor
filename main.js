@@ -4,6 +4,7 @@ const path = require('path');
 const { spawn } = require('child_process');
 const server = require('./server');
 const VSRHandler = require('./vsr-handler');
+const SpeechHandler = require('./speech-handler');
 
 let robot = null;
 let useNativeControl = false;
@@ -124,6 +125,7 @@ function sendMouseUp(button) {
 
 let mainWindow;
 let vsrHandler = null;
+let speechHandler = null;
 
 function createWindow() {
   mainWindow = new BrowserWindow({
@@ -277,6 +279,23 @@ app.whenReady().then(() => {
   // Initialize VSR handler
   vsrHandler = new VSRHandler();
   
+  // Initialize Speech handler
+  speechHandler = new SpeechHandler();
+  speechHandler.onTranscriptReady = (text) => {
+    // Type the transcribed text using robotjs or native control
+    try {
+      if (useNativeControl) {
+        // For native control, we'd need to implement typing via AppleScript/xdotool
+        // For now, just log it
+        console.log('[Speech] Would type:', text);
+      } else if (robot) {
+        robot.typeString(text);
+      }
+    } catch (err) {
+      console.error('[Speech] Error typing text:', err);
+    }
+  };
+  
   // Register global shortcuts for VSR
   globalShortcut.register('CommandOrControl+R', () => {
     if (mainWindow) {
@@ -304,6 +323,11 @@ app.on('will-quit', () => {
   // Cleanup VSR temp files
   if (vsrHandler) {
     vsrHandler.cleanup();
+  }
+  
+  // Cleanup speech handler
+  if (speechHandler) {
+    speechHandler.stop();
   }
 });
 
@@ -343,6 +367,44 @@ ipcMain.handle('vsr-stop-recording', async () => {
     return { success: true, result };
   } catch (error) {
     console.error('Error stopping VSR recording:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Speech-to-Text IPC Handlers
+ipcMain.handle('speech-start', async (event, { modelSize }) => {
+  try {
+    if (!speechHandler) {
+      return { success: false, error: 'Speech handler not initialized' };
+    }
+    return speechHandler.start(modelSize || 'base');
+  } catch (error) {
+    console.error('Error starting speech:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('speech-stop', async () => {
+  try {
+    if (!speechHandler) {
+      return { success: false, error: 'Speech handler not initialized' };
+    }
+    return speechHandler.stop();
+  } catch (error) {
+    console.error('Error stopping speech:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('speech-feed-audio', async (event, { audioBuffer }) => {
+  try {
+    if (!speechHandler) {
+      return { success: false, error: 'Speech handler not initialized' };
+    }
+    const fed = speechHandler.feedAudio(Buffer.from(audioBuffer));
+    return { success: fed };
+  } catch (error) {
+    console.error('Error feeding audio:', error);
     return { success: false, error: error.message };
   }
 });
