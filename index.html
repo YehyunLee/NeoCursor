@@ -163,63 +163,133 @@
       left: 0;
       width: 100vw;
       height: 100vh;
-      background: rgba(0, 0, 0, 0.8);
+      background: radial-gradient(circle at top, rgba(13, 24, 72, 0.95), rgba(5, 6, 23, 0.98));
       display: none;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
       z-index: 99999;
       pointer-events: auto;
+      backdrop-filter: blur(8px);
     }
 
     #calibration-overlay.active {
-      display: block;
+      display: flex;
+    }
+
+    .calibration-content {
+      max-width: 720px;
+      width: 100%;
+      pointer-events: none;
+      text-align: center;
+    }
+
+    .calibration-progress-card {
+      background: rgba(255, 255, 255, 0.08);
+      border: 1px solid rgba(255, 255, 255, 0.15);
+      border-radius: 16px;
+      padding: 1.5rem 2rem;
+      margin-bottom: 1.5rem;
+      color: #fff;
+      box-shadow: 0 20px 60px rgba(5, 6, 23, 0.6);
+      pointer-events: none;
+    }
+
+    .progress-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      font-size: 0.95rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 1rem;
+      opacity: 0.8;
+    }
+
+    .calibration-pill {
+      background: rgba(102, 126, 234, 0.2);
+      border: 1px solid rgba(102, 126, 234, 0.6);
+      border-radius: 999px;
+      padding: 0.25rem 0.8rem;
+      font-size: 0.8rem;
+      letter-spacing: 0.08em;
+    }
+
+    .progress-track {
+      width: 100%;
+      height: 10px;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.1);
+      overflow: hidden;
+      margin-bottom: 0.75rem;
+    }
+
+    .progress-bar {
+      height: 100%;
+      width: 0;
+      border-radius: inherit;
+      background: linear-gradient(135deg, #667eea, #4ecca3);
+      transition: width 0.3s ease;
+    }
+
+    .calibration-progress-card p {
+      margin-top: 0.5rem;
+      opacity: 0.8;
+      font-size: 1rem;
+    }
+
+    .calibration-instructions {
+      background: rgba(0, 0, 0, 0.25);
+      border: 1px solid rgba(255, 255, 255, 0.08);
+      border-radius: 16px;
+      padding: 1.5rem 2rem;
+      color: white;
+      pointer-events: none;
+      box-shadow: 0 10px 35px rgba(0, 0, 0, 0.35);
+    }
+
+    .calibration-instructions h2 {
+      font-size: 1.8rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .calibration-instructions ul {
+      list-style: none;
+      padding: 0;
+      margin: 0;
+      display: grid;
+      gap: 0.5rem;
+    }
+
+    .calibration-instructions li {
+      font-size: 1rem;
+      opacity: 0.85;
     }
 
     .calibration-point {
       position: absolute;
-      width: 30px;
-      height: 30px;
-      background: radial-gradient(circle, #667eea 0%, #764ba2 100%);
-      border: 3px solid white;
+      width: 34px;
+      height: 34px;
+      background: radial-gradient(circle, #ffafbd 0%, #ffc3a0 60%, rgba(255, 255, 255, 0));
+      border: 3px solid rgba(255, 255, 255, 0.85);
       border-radius: 50%;
       cursor: pointer;
       transform: translate(-50%, -50%);
       animation: pulse 1s ease-in-out infinite;
-      box-shadow: 0 0 20px rgba(102, 126, 234, 0.8);
+      box-shadow: 0 0 25px rgba(255, 175, 189, 0.9);
       z-index: 100000;
     }
 
     .calibration-point.completed {
-      background: radial-gradient(circle, #4ecca3 0%, #2ecc71 100%);
+      background: radial-gradient(circle, #4ecca3 0%, rgba(78, 204, 163, 0.2));
+      border-color: rgba(78, 204, 163, 0.9);
+      box-shadow: 0 0 25px rgba(78, 204, 163, 0.8);
       animation: none;
     }
 
     @keyframes pulse {
-      0%, 100% { transform: translate(-50%, -50%) scale(1); }
-      50% { transform: translate(-50%, -50%) scale(1.2); }
-    }
-
-    .calibration-instructions {
-      position: absolute;
-      top: 50%;
-      left: 50%;
-      transform: translate(-50%, -50%);
-      text-align: center;
-      color: white;
-      font-size: 1.5rem;
-      z-index: 100001;
-      pointer-events: none;
-    }
-
-    .calibration-progress {
-      position: absolute;
-      top: 20px;
-      left: 50%;
-      transform: translateX(-50%);
-      background: rgba(255, 255, 255, 0.1);
-      padding: 1rem 2rem;
-      border-radius: 10px;
-      color: white;
-      font-size: 1.2rem;
-      z-index: 100001;
+      0%, 100% { transform: translate(-50%, -50%) scale(0.95); }
+      50% { transform: translate(-50%, -50%) scale(1.15); }
     }
   </style>
 </head>
@@ -272,12 +342,25 @@
 
   <!-- Calibration Overlay -->
   <div id="calibration-overlay">
-    <div class="calibration-progress">
-      <span id="calibration-progress-text">Click on each point while looking at it</span>
-    </div>
-    <div class="calibration-instructions" id="calibration-instructions">
-      Look at the glowing point and click it<br>
-      <small>Repeat for all 9 points</small>
+    <div class="calibration-content">
+      <div class="calibration-progress-card">
+        <div class="progress-header">
+          <span>Precision Calibration</span>
+          <span class="calibration-pill" id="calibration-point-label">Point 1 / 9</span>
+        </div>
+        <div class="progress-track">
+          <div class="progress-bar" id="calibration-progress-bar"></div>
+        </div>
+        <p id="calibration-progress-text">Aim your eyes at the highlighted dot and click it 5 times.</p>
+      </div>
+      <div class="calibration-instructions" id="calibration-instructions">
+        <h2>Calibrate for Maximum Accuracy</h2>
+        <ul>
+          <li>1. Follow the glowing point with your eyes.</li>
+          <li>2. Click it 5 times while focused on it.</li>
+          <li>3. Repeat across all 9 points.</li>
+        </ul>
+      </div>
     </div>
   </div>
 

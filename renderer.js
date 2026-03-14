@@ -17,6 +17,14 @@ const statusElements = {
   calibration: null
 };
 
+const calibrationUI = {
+  overlay: null,
+  progressText: null,
+  progressBar: null,
+  pointLabel: null,
+  instructions: null
+};
+
 const buttons = {
   start: null,
   stop: null,
@@ -75,7 +83,7 @@ function create9PointGrid() {
 }
 
 function showCalibrationOverlay() {
-  const overlay = document.getElementById('calibration-overlay');
+  const overlay = calibrationUI.overlay;
   console.log('Showing calibration overlay:', overlay);
   overlay.classList.add('active');
   
@@ -88,6 +96,7 @@ function showCalibrationOverlay() {
   currentCalibrationIndex = 0;
   
   console.log('Creating calibration points:', calibrationPoints);
+  updateCalibrationInstructions();
   
   calibrationPoints.forEach(point => {
     const pointEl = document.createElement('div');
@@ -186,21 +195,57 @@ function handleCalibrationClick(pointId) {
 }
 
 function updateCalibrationProgress() {
-  const progressText = document.getElementById('calibration-progress-text');
   const totalClicks = calibrationPoints.reduce((sum, p) => sum + p.clicks, 0);
   const totalRequired = calibrationPoints.length * clicksPerPoint;
   const currentPoint = calibrationPoints[currentCalibrationIndex];
+  const pct = Math.min(100, (totalClicks / totalRequired) * 100);
   
-  if (currentPoint) {
-    progressText.textContent = `Point ${currentCalibrationIndex + 1}/9 - Click ${currentPoint.clicks}/${clicksPerPoint} (Total: ${totalClicks}/${totalRequired})`;
+  if (calibrationUI.progressBar) {
+    calibrationUI.progressBar.style.width = `${pct}%`;
   }
+  
+  if (calibrationUI.pointLabel && currentPoint) {
+    calibrationUI.pointLabel.textContent = `Point ${currentCalibrationIndex + 1} / ${calibrationPoints.length}`;
+  }
+  
+  if (calibrationUI.progressText && currentPoint) {
+    calibrationUI.progressText.textContent = `Click ${currentPoint.clicks}/${clicksPerPoint} on the highlighted point • ${totalClicks}/${totalRequired} samples`; 
+  }
+  
+  updateCalibrationInstructions();
+}
+
+function updateCalibrationInstructions(completed = false) {
+  if (!calibrationUI.instructions) return;
+  
+  if (completed) {
+    calibrationUI.instructions.innerHTML = '<h2>Perfect! 🎯</h2><ul><li>Calibration locked in.</li><li>Move your eyes to steer the cursor.</li><li>Recalibrate anytime from the dashboard.</li></ul>';
+    return;
+  }
+  
+  const steps = [
+    'Get centered and steady in frame.',
+    'Track the glowing target with your eyes.',
+    'Click <strong>5×</strong> while focusing on each point.'
+  ];
+  const pointNumber = currentCalibrationIndex + 1;
+  calibrationUI.instructions.innerHTML = `
+    <h2>Calibrate for Maximum Accuracy</h2>
+    <p style="opacity:0.8">Currently on point ${pointNumber} of ${calibrationPoints.length}</p>
+    <ul>${steps.map(step => `<li>${step}</li>`).join('')}</ul>
+  `;
 }
 
 function completeCalibration() {
-  const overlay = document.getElementById('calibration-overlay');
-  const instructions = document.getElementById('calibration-instructions');
+  const overlay = calibrationUI.overlay;
   
-  instructions.innerHTML = '<h2>Calibration Complete!</h2><p>Starting eye tracking...</p>';
+  updateCalibrationInstructions(true);
+  if (calibrationUI.progressText) {
+    calibrationUI.progressText.textContent = 'Calibration complete! Stabilizing tracking...';
+  }
+  if (calibrationUI.progressBar) {
+    calibrationUI.progressBar.style.width = '100%';
+  }
   
   setTimeout(() => {
     overlay.classList.remove('active');
@@ -306,7 +351,7 @@ async function stopTracking() {
   smoothingBuffer = [];
   
   // Hide calibration overlay if visible
-  const overlay = document.getElementById('calibration-overlay');
+  const overlay = calibrationUI.overlay;
   overlay.classList.remove('active');
   
   await window.electronAPI.setFullscreen(false);
@@ -385,6 +430,12 @@ window.addEventListener('load', () => {
   statusElements.eye = document.getElementById('eye-status');
   statusElements.speech = document.getElementById('speech-status');
   statusElements.calibration = document.getElementById('calibration-status');
+  
+  calibrationUI.overlay = document.getElementById('calibration-overlay');
+  calibrationUI.progressText = document.getElementById('calibration-progress-text');
+  calibrationUI.progressBar = document.getElementById('calibration-progress-bar');
+  calibrationUI.pointLabel = document.getElementById('calibration-point-label');
+  calibrationUI.instructions = document.getElementById('calibration-instructions');
   
   buttons.start = document.getElementById('start-tracking');
   buttons.stop = document.getElementById('stop-tracking');
