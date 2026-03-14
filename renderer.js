@@ -13,29 +13,24 @@ let vsrCanvas = null;
 let vsrCanvasCtx = null;
 
 // Head tracking + stability state
-let centerPoint = null;
 let sensitivity = 15;
 let stabilityLevel = 7; // 1-10 slider
 
-let deadzone = 0.004;
-const DEADZONE_MIN = 0.003;
-const DEADZONE_MAX = 0.009;
+// Cursor smoothing with exponential moving average
+const ALPHA_POS = 0.2;  // Smoothing factor for cursor position
+let cursorX = null;
+let cursorY = null;
 
-// Adaptive EMA: alpha varies by movement magnitude
-const EMA_ALPHA_MIN = 0.05;  // more smoothing at rest
-const EMA_ALPHA_MAX = 0.38;  // slightly damp fast swings
-const ADAPT_THRESHOLD = 10;  // require larger movement before loosening smoothing
-let emaX = null;
-let emaY = null;
-let lastEmittedX = null;
-let lastEmittedY = null;
-let smoothingDeadzone = 5;
-const SMOOTHING_DEADZONE_MIN = 3;
-const SMOOTHING_DEADZONE_MAX = 12;
+// Manual movement detection
+let lastManualMoveTime = 0;
+const MANUAL_THRESHOLD = 20;  // pixels
+const MANUAL_PAUSE_DURATION = 1000;  // ms
 
-let microMovementThreshold = 0.007;
-const MICRO_THRESHOLD_MIN = 0.004;
-const MICRO_THRESHOLD_MAX = 0.012;
+// Tracking box for iris mapping (relative to frame dimensions)
+const BOX_W_RATIO = 0.4;
+const BOX_H_RATIO = 0.4;
+const BOX_X_RATIO = 0.3;
+const BOX_Y_RATIO = 0.3;
 
 // Cache screen bounds to skip IPC round-trip every frame
 let cachedBounds = null;
@@ -77,17 +72,13 @@ const buttons = { start: null, stop: null, recenter: null, toggleVideo: null };
 
 let faceMesh, camera, videoElement, canvasElement, canvasCtx;
 
-// Blink Detection
+// Blink Detection - using iris landmarks for more reliable detection
 const RIGHT_EYE = [33, 160, 158, 133, 153, 144];
 const LEFT_EYE = [362, 385, 387, 263, 373, 380];
-const BASELINE_LEARN_RATE = 0.03;
-const CLOSED_RATIO = 0.78;
-const OPEN_RATIO = 0.92;
-const CLICK_COOLDOWN = 500;
-let blinkState = { left: false, right: false };
-let lastClickTime = 0;
-let baselineLeftEAR = 0.28;
-let baselineRightEAR = 0.28;
+const BLINK_THRESHOLD = 0.20;  // EAR threshold for blink detection
+const CLICK_COOLDOWN = 800;  // ms between clicks
+let lastLeftClickTime = 0;
+let lastRightClickTime = 0;
 
 function updateStatus(element, text, color) {
   if (element) { element.textContent = text; element.style.color = color; }
@@ -100,127 +91,50 @@ function calculateEAR(landmarks, idx) {
     / (2.0 * dist(landmarks[idx[0]], landmarks[idx[3]]));
 }
 
-function updateEARBaseline(baseline, ear, closed) {
-  if (closed || !isFinite(ear)) return baseline;
-  return baseline * (1 - BASELINE_LEARN_RATE) + Math.min(Math.max(ear, 0.15), 0.5) * BASELINE_LEARN_RATE;
-}
-
 function processBlinks(landmarks) {
   if (!isTracking || !landmarks || landmarks.length === 0) return;
+  
   const leftEar = calculateEAR(landmarks, LEFT_EYE);
   const rightEar = calculateEAR(landmarks, RIGHT_EYE);
-  const leftClosed = leftEar < baselineLeftEAR * CLOSED_RATIO;
-  const rightClosed = rightEar < baselineRightEAR * CLOSED_RATIO;
-  const leftOpen = leftEar > baselineLeftEAR * OPEN_RATIO;
-  const rightOpen = rightEar > baselineRightEAR * OPEN_RATIO;
-  baselineLeftEAR = updateEARBaseline(baselineLeftEAR, leftEar, leftClosed);
-  baselineRightEAR = updateEARBaseline(baselineRightEAR, rightEar, rightClosed);
-
   const now = Date.now();
-
-  // Expire cancelable state after window
-  if (dragState === 'cancelable' && now - dragStateTime > DRAG_CANCEL_WINDOW) {
-    dragState = 'idle';
-    updateStatus(statusElements.drag, "Ready", "#a0a0a0");
-    updateStatus(statusElements.click, "Waiting...", "#a0a0a0");
+  
+  // Check for manual mouse movement - pause tracking if detected
+  if (cursorX !== null && cursorY !== null) {
+    const actualPos = { x: cursorX, y: cursorY };
+    // This will be checked in moveCursor function
   }
-
-  // 'pending' → 'dragging': eye stayed closed past HOLD_THRESHOLD
-  if (dragState === 'pending' && leftClosed && now - leftEyeCloseTime >= HOLD_THRESHOLD) {
-    dragState = 'dragging';
-    dragStateTime = now;
-    window.electronAPI.mouseDown('left');
-    updateStatus(statusElements.click, "Selecting...", "#f59e0b");
-    updateStatus(statusElements.drag, "Hold eye closed to select", "#f59e0b");
+  
+  // Only process clicks if enough time has passed since manual movement
+  if (now - lastManualMoveTime <= MANUAL_PAUSE_DURATION) {
+    return;
   }
-
-  // Left eye close edge (was open, now closed)
-  if (leftClosed && rightOpen && !blinkState.left) {
-    blinkState.left = true;
-
-    if (dragState === 'cancelable') {
-      // Cancel selection — click to deselect
-      dragState = 'idle';
-      dragStateTime = now;
-      lastClickTime = now;
+  
+  // Left eye blink detection (wink left = left click)
+  if (leftEar < BLINK_THRESHOLD && rightEar > BLINK_THRESHOLD) {
+    if (now - lastLeftClickTime > CLICK_COOLDOWN) {
       window.electronAPI.mouseClick('left');
-      updateStatus(statusElements.click, "Selection Cancelled", "#ef4444");
-      updateStatus(statusElements.drag, "Ready", "#a0a0a0");
-      setTimeout(() => { if (Date.now() - lastClickTime >= 1000) updateStatus(statusElements.click, "Waiting...", "#a0a0a0"); }, 1000);
-    } else if (dragState === 'idle' && now - lastClickTime > CLICK_COOLDOWN) {
-      // Eye just closed — enter pending, decide click vs drag later
-      dragState = 'pending';
-      leftEyeCloseTime = now;
-      lastClickTime = now;
-    }
-  }
-
-  // Left eye open edge (was closed, now open)
-  if (leftOpen && blinkState.left) {
-    blinkState.left = false;
-
-    if (dragState === 'pending') {
-      // Opened before HOLD_THRESHOLD → regular left click
-      dragState = 'idle';
-      dragStateTime = now;
-      window.electronAPI.mouseClick('left');
+      lastLeftClickTime = now;
       updateStatus(statusElements.click, "Left Click", "#4ecca3");
-      setTimeout(() => { if (Date.now() - lastClickTime >= 1000) updateStatus(statusElements.click, "Waiting...", "#a0a0a0"); }, 1000);
-    } else if (dragState === 'dragging') {
-      // End drag, enter cancelable window
-      dragState = 'cancelable';
-      dragStateTime = now;
-      window.electronAPI.mouseUp('left');
-      updateStatus(statusElements.click, "Selected (blink to cancel)", "#4ecca3");
-      updateStatus(statusElements.drag, "Blink left to cancel", "#4ecca3");
+      setTimeout(() => {
+        if (Date.now() - lastLeftClickTime >= 1000) {
+          updateStatus(statusElements.click, "Waiting...", "#a0a0a0");
+        }
+      }, 1000);
     }
   }
-
-  // Right eye: right-click (cancels active drag if any)
-  if (rightClosed && leftOpen) {
-    if (!blinkState.right && now - lastClickTime > CLICK_COOLDOWN) {
-      blinkState.right = true;
-      lastClickTime = now;
-
-      if (dragState === 'dragging' || dragState === 'pending') {
-        if (dragState === 'dragging') window.electronAPI.mouseUp('left');
-        dragState = 'idle';
-        dragStateTime = now;
-        updateStatus(statusElements.drag, "Ready", "#a0a0a0");
-      }
-      updateStatus(statusElements.click, "Right Click", "#667eea");
+  
+  // Right eye blink detection (wink right = right click)
+  if (rightEar < BLINK_THRESHOLD && leftEar > BLINK_THRESHOLD) {
+    if (now - lastRightClickTime > CLICK_COOLDOWN) {
       window.electronAPI.mouseClick('right');
-      setTimeout(() => { if (Date.now() - lastClickTime >= 1000) updateStatus(statusElements.click, "Waiting...", "#a0a0a0"); }, 1000);
+      lastRightClickTime = now;
+      updateStatus(statusElements.click, "Right Click", "#667eea");
+      setTimeout(() => {
+        if (Date.now() - lastRightClickTime >= 1000) {
+          updateStatus(statusElements.click, "Waiting...", "#a0a0a0");
+        }
+      }, 1000);
     }
-  } else {
-    if (rightOpen) blinkState.right = false;
-  }
-}
-
-// Adaptive EMA: small delta = heavy smoothing (stable), large delta = light smoothing (responsive)
-function smoothCoordinates(x, y) {
-  if (emaX === null) { emaX = x; emaY = y; }
-  const dx = Math.abs(x - emaX);
-  const dy = Math.abs(y - emaY);
-  const mag = Math.max(dx, dy);
-  const t = Math.min(mag / ADAPT_THRESHOLD, 1);
-  const alpha = EMA_ALPHA_MIN + t * (EMA_ALPHA_MAX - EMA_ALPHA_MIN);
-  emaX = alpha * x + (1 - alpha) * emaX;
-  emaY = alpha * y + (1 - alpha) * emaY;
-  let tx = Math.round(emaX);
-  let ty = Math.round(emaY);
-  if (lastEmittedX !== null && Math.hypot(tx - lastEmittedX, ty - lastEmittedY) < smoothingDeadzone) {
-    return { x: lastEmittedX, y: lastEmittedY };
-  }
-  lastEmittedX = tx;
-  lastEmittedY = ty;
-  return { x: tx, y: ty };
-}
-
-function setCenterPoint(landmarks) {
-  if (landmarks && landmarks.length > 0) {
-    centerPoint = getTrackedPosition(landmarks);
-    updateStatus(statusElements.calibration, 'Center Set', '#4ecca3');
   }
 }
 
@@ -229,50 +143,58 @@ async function refreshBoundsCache() {
   if (r.success) { cachedBounds = r.bounds; boundsCacheTime = Date.now(); }
 }
 
-// Blend nose tip (1), nose bridge (6), chin (152), forehead (10) to reduce single-point noise
-const TRACK_LANDMARKS = [1, 6, 152, 10];
-
-function getTrackedPosition(landmarks) {
-  let sx = 0, sy = 0;
-  for (const i of TRACK_LANDMARKS) { sx += landmarks[i].x; sy += landmarks[i].y; }
-  return { x: sx / TRACK_LANDMARKS.length, y: sy / TRACK_LANDMARKS.length };
-}
+// Use iris landmarks (468, 473) for precise eye tracking
+const IRIS_LEFT = 468;
+const IRIS_RIGHT = 473;
 
 function processLandmarks(landmarks) {
   if (!isTracking || !landmarks || landmarks.length === 0) return;
-  if (!centerPoint) { setCenterPoint(landmarks); return; }
-
   if (Date.now() - boundsCacheTime > BOUNDS_CACHE_MS) refreshBoundsCache();
+  if (!cachedBounds) return;
 
-  const pos = getTrackedPosition(landmarks);
-  const currentX = pos.x;
-  const currentY = pos.y;
-
-  let rawDX = currentX - centerPoint.x;
-  let rawDY = currentY - centerPoint.y;
-  if (Math.abs(rawDX) < deadzone) rawDX = 0;
-  if (Math.abs(rawDY) < deadzone) rawDY = 0;
-  if (rawDX === 0 && rawDY === 0) return;
-
-  const dominantDelta = Math.max(Math.abs(rawDX), Math.abs(rawDY));
-  if (dominantDelta < microMovementThreshold) {
+  const videoElement = document.getElementsByClassName('input_video')[0];
+  if (!videoElement) return;
+  
+  const fw = videoElement.videoWidth || 320;
+  const fh = videoElement.videoHeight || 240;
+  
+  // Get iris center position in frame coordinates
+  // Note: Camera feed is mirrored, so we need to flip X coordinate
+  const irisXRaw = (landmarks[IRIS_LEFT].x + landmarks[IRIS_RIGHT].x) / 2.0;
+  const irisX = (1.0 - irisXRaw) * fw;  // Flip X axis
+  const irisY = (landmarks[IRIS_LEFT].y + landmarks[IRIS_RIGHT].y) / 2.0 * fh;
+  
+  // Define tracking box (center region of frame)
+  const boxW = fw * BOX_W_RATIO;
+  const boxH = fh * BOX_H_RATIO;
+  const boxX = fw * BOX_X_RATIO;
+  const boxY = fh * BOX_Y_RATIO;
+  
+  // Map iris position within box to screen coordinates
+  const targetX = (irisX - boxX) / boxW * cachedBounds.width;
+  const targetY = (irisY - boxY) / boxH * cachedBounds.height;
+  
+  // Clamp to screen bounds
+  const clampedX = Math.max(0, Math.min(cachedBounds.width - 1, targetX));
+  const clampedY = Math.max(0, Math.min(cachedBounds.height - 1, targetY));
+  
+  // Initialize cursor position on first run
+  if (cursorX === null || cursorY === null) {
+    cursorX = clampedX;
+    cursorY = clampedY;
+    updateStatus(statusElements.calibration, 'Tracking Active', '#4ecca3');
     return;
   }
-
-  if (scrollMode) {
-    doScroll(rawDX, rawDY);
-  } else {
-    let deltaX = accelerate(rawDX * sensitivity);
-    let deltaY = accelerate(rawDY * sensitivity * 1.3);
-    moveCursor(deltaX, deltaY);
-  }
+  
+  // Apply exponential smoothing
+  cursorX = cursorX + ALPHA_POS * (clampedX - cursorX);
+  cursorY = cursorY + ALPHA_POS * (clampedY - cursorY);
+  
+  moveCursor(cursorX, cursorY);
 }
 
 function doScroll(rawDX, rawDY) {
   if (pendingScroll) return;
-  // Windows MOUSEEVENTF_WHEEL: positive = scroll up, negative = scroll down
-  // rawDY positive = head moved down in camera → scroll DOWN (negative wheel)
-  // rawDY negative = head moved up in camera → scroll UP (positive wheel)
   let dy = Math.round(-rawDY * sensitivity * SCROLL_SENSITIVITY);
   let dx = Math.round(-rawDX * sensitivity * SCROLL_SENSITIVITY * 0.5);
   // Enforce minimum of WHEEL_DELTA (120) so apps register at least one notch
@@ -289,33 +211,26 @@ function doScroll(rawDX, rawDY) {
   }).catch(() => { pendingScroll = false; });
 }
 
-function moveCursor(deltaX, deltaY) {
+function moveCursor(targetX, targetY) {
   if (!cachedBounds || pendingMove) return;
-
-  const { x: bx, y: by, width: sw, height: sh } = cachedBounds;
-  let targetX = bx + (sw / 2) - (deltaX * sw);
-  let targetY = by + (sh / 2) + (deltaY * sh);
-  targetX = Math.max(bx, Math.min(bx + sw - 1, targetX));
-  targetY = Math.max(by, Math.min(by + sh - 1, targetY));
-
-  const smoothed = smoothCoordinates(targetX, targetY);
+  
+  const now = Date.now();
 
   pendingMove = true;
-  window.electronAPI.moveCursor(smoothed.x, smoothed.y).then((r) => {
+  window.electronAPI.moveCursor(Math.round(targetX), Math.round(targetY)).then((r) => {
     pendingMove = false;
     if (r && r.unavailable) {
       if (!mouseControlUnavailableShown) {
         mouseControlUnavailableShown = true;
-        updateStatus(statusElements.eye, 'Mouse control unavailable (e.g. Windows ARM64)', '#e74c3c');
+        updateStatus(statusElements.eye, 'Mouse control unavailable', '#e74c3c');
       }
     } else if (r && r.paused) {
+      lastManualMoveTime = now;
       updateStatus(statusElements.eye, 'Paused (Manual Override)', '#f39c12');
-      centerPoint = null;
     } else {
-      const now = Date.now();
       if (now - lastStatusUpdate > STATUS_UPDATE_INTERVAL_MS) {
         lastStatusUpdate = now;
-        updateStatus(statusElements.eye, `Tracking (${smoothed.x}, ${smoothed.y})`, '#4ecca3');
+        updateStatus(statusElements.eye, `Tracking (${Math.round(targetX)}, ${Math.round(targetY)})`, '#4ecca3');
       }
     }
   }).catch(() => { pendingMove = false; });
@@ -328,22 +243,19 @@ function onResults(results) {
     canvasCtx.drawImage(results.image, 0, 0, canvasElement.width, canvasElement.height);
     if (results.multiFaceLandmarks && results.multiFaceLandmarks.length > 0) {
       for (const landmarks of results.multiFaceLandmarks) {
-        const nose = landmarks[1];
+        // Draw iris centers
+        const irisLeft = landmarks[468];
+        const irisRight = landmarks[473];
+        
         canvasCtx.beginPath();
-        canvasCtx.arc(nose.x * canvasElement.width, nose.y * canvasElement.height, 5, 0, 2 * Math.PI);
+        canvasCtx.arc(irisLeft.x * canvasElement.width, irisLeft.y * canvasElement.height, 3, 0, 2 * Math.PI);
         canvasCtx.fillStyle = '#4ecca3';
         canvasCtx.fill();
-        if (centerPoint) {
-          canvasCtx.beginPath();
-          canvasCtx.arc(centerPoint.x * canvasElement.width, centerPoint.y * canvasElement.height, 5, 0, 2 * Math.PI);
-          canvasCtx.fillStyle = '#e94560';
-          canvasCtx.fill();
-          canvasCtx.beginPath();
-          canvasCtx.moveTo(centerPoint.x * canvasElement.width, centerPoint.y * canvasElement.height);
-          canvasCtx.lineTo(nose.x * canvasElement.width, nose.y * canvasElement.height);
-          canvasCtx.strokeStyle = 'rgba(255, 255, 255, 0.5)';
-          canvasCtx.stroke();
-        }
+        
+        canvasCtx.beginPath();
+        canvasCtx.arc(irisRight.x * canvasElement.width, irisRight.y * canvasElement.height, 3, 0, 2 * Math.PI);
+        canvasCtx.fillStyle = '#4ecca3';
+        canvasCtx.fill();
       }
     }
     canvasCtx.restore();
@@ -357,26 +269,47 @@ function onResults(results) {
 }
 
 async function initializeTracker() {
+  console.log('[Init] Starting MediaPipe initialization...');
   updateStatus(statusElements.eye, 'Loading MediaPipe...', '#f39c12');
+  
   try {
     videoElement = document.getElementsByClassName('input_video')[0];
     canvasElement = document.getElementsByClassName('output_canvas')[0];
+    
+    if (!videoElement) {
+      throw new Error('Video element not found');
+    }
+    if (!canvasElement) {
+      throw new Error('Canvas element not found');
+    }
+    
     canvasCtx = canvasElement.getContext('2d');
+    console.log('[Init] Video and canvas elements found');
 
+    // Check if FaceMesh is available
+    if (typeof FaceMesh === 'undefined') {
+      throw new Error('FaceMesh class not loaded - MediaPipe scripts may not have loaded');
+    }
+    
+    console.log('[Init] Creating FaceMesh instance...');
     faceMesh = new FaceMesh({ locateFile: (file) => `mediapipe/face_mesh/${file}` });
+    
+    console.log('[Init] Setting FaceMesh options...');
     faceMesh.setOptions({
       maxNumFaces: 1,
       refineLandmarks: true,
       minDetectionConfidence: 0.5,
       minTrackingConfidence: 0.5
     });
+    
+    console.log('[Init] Registering onResults callback...');
     faceMesh.onResults(onResults);
 
     updateStatus(statusElements.eye, 'Ready - Click Start', '#a0a0a0');
-    console.log('MediaPipe initialized');
+    console.log('[Init] MediaPipe initialized successfully');
   } catch (error) {
-    console.error('Error initializing MediaPipe:', error);
-    updateStatus(statusElements.eye, 'Initialization failed', '#e94560');
+    console.error('[Init] Error initializing MediaPipe:', error);
+    updateStatus(statusElements.eye, `Init failed: ${error.message}`, '#e94560');
   }
 }
 
@@ -392,9 +325,10 @@ async function startTracking() {
     await refreshBoundsCache();
     await camera.start();
     isTracking = true;
-    centerPoint = null;
+    cursorX = null;
+    cursorY = null;
     updateStatus(statusElements.eye, 'Tracking Active', '#4ecca3');
-    updateStatus(statusElements.calibration, 'Look at center of screen...', '#f39c12');
+    updateStatus(statusElements.calibration, 'Initializing...', '#f39c12');
     if (buttons.start) buttons.start.disabled = true;
     if (buttons.stop) buttons.stop.disabled = false;
     if (buttons.recenter) buttons.recenter.disabled = false;
@@ -408,15 +342,9 @@ async function startTracking() {
 
 async function stopTracking() {
   if (camera) camera.stop();
-  if (dragState === 'dragging') window.electronAPI.mouseUp('left');
-  dragState = 'idle';
-  dragStateTime = 0;
-  leftEyeCloseTime = 0;
-  updateStatus(statusElements.drag, "Ready", "#a0a0a0");
   isTracking = false;
-  emaX = null; emaY = null;
-  lastEmittedX = null; lastEmittedY = null;
-  centerPoint = null;
+  cursorX = null;
+  cursorY = null;
   pendingMove = false;
   updateStatus(statusElements.eye, 'Stopped', '#a0a0a0');
   updateStatus(statusElements.calibration, 'Not Set', '#a0a0a0');
@@ -428,9 +356,9 @@ async function stopTracking() {
 
 function recenter() {
   if (!isTracking) { alert('Please start tracking first'); return; }
-  centerPoint = null;
-  emaX = null; emaY = null;
-  updateStatus(statusElements.calibration, 'Look at center of screen...', '#f39c12');
+  cursorX = null;
+  cursorY = null;
+  updateStatus(statusElements.calibration, 'Recalibrating...', '#f39c12');
 }
 
 function toggleVideoPreview() {
@@ -465,15 +393,11 @@ window.addEventListener('load', () => {
   const stabilityValue = document.getElementById('stability-value');
   if (stabilitySlider) {
     stabilityLevel = parseInt(stabilitySlider.value);
-    applyStabilitySettings();
     stabilitySlider.addEventListener('input', (e) => {
       stabilityLevel = parseInt(e.target.value);
-      applyStabilitySettings();
       if (stabilityValue) stabilityValue.textContent = stabilityLevel;
     });
     if (stabilityValue) stabilityValue.textContent = stabilityLevel;
-  } else {
-    applyStabilitySettings();
   }
 
   updateStatus(statusElements.speech, 'Ready (Ctrl+R to record)', '#a0a0a0');
@@ -505,13 +429,6 @@ window.addEventListener('load', () => {
 
   setTimeout(initializeTracker, 500);
 });
-
-function applyStabilitySettings() {
-  const t = (stabilityLevel - 1) / 9; // normalize 0-1
-  deadzone = DEADZONE_MIN + t * (DEADZONE_MAX - DEADZONE_MIN);
-  smoothingDeadzone = Math.round(SMOOTHING_DEADZONE_MIN + t * (SMOOTHING_DEADZONE_MAX - SMOOTHING_DEADZONE_MIN));
-  microMovementThreshold = MICRO_THRESHOLD_MIN + t * (MICRO_THRESHOLD_MAX - MICRO_THRESHOLD_MIN);
-}
 
 // VSR Recording Functions
 async function toggleVSRRecording() {
