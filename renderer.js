@@ -80,19 +80,49 @@ let faceMesh, camera, videoElement, canvasElement, canvasCtx;
 // Blink Detection - using iris landmarks for more reliable detection
 const RIGHT_EYE = [33, 160, 158, 133, 153, 144];
 const LEFT_EYE = [362, 385, 387, 263, 373, 380];
-const BLINK_CLOSE_THRESHOLD = 0.18;
-const BLINK_OPEN_THRESHOLD = 0.24;
+const BLINK_CLOSE_THRESHOLD = 0.20; // Increased from 0.18 for easier detection
+const BLINK_OPEN_THRESHOLD = 0.25; // Increased from 0.24
 const CLICK_COOLDOWN = 800;  // ms between clicks
 let lastLeftClickTime = 0;
 let lastRightClickTime = 0;
 
-// Drag state
+// Drag state - now using double-blink toggle
 let isDragging = false;
-let leftEyeClosed = false;
-let leftEyeCloseTime = 0;
-let dragPending = false;
-const DRAG_HOLD_MS = 400;
-const DRAG_RELEASE_DELAY_MS = 100;
+let lastLeftBlinkTime = 0;
+let lastRightBlinkTime = 0;
+const DOUBLE_BLINK_WINDOW = 1000; // ms window for double blink (increased to 1s for easier detection)
+let leftBlinkCount = 0;
+let rightBlinkCount = 0;
+let leftEyeWasOpen = true;
+let rightEyeWasOpen = true;
+
+// Gaze trigger state
+let gazeCircle = null;
+let gazeBars = null;
+let currentGazeZone = null;
+let gazeStartTime = 0;
+const GAZE_TRIGGER_MS = 800; // Hold gaze for 800ms to trigger
+const GAZE_BAR_THRESHOLD = 60; // pixels from edge
+
+// Action feedback overlay
+let actionFeedback = null;
+let feedbackTimeout = null;
+
+function showActionFeedback(message, type = 'default') {
+  if (!actionFeedback) return;
+  
+  // Clear previous timeout
+  if (feedbackTimeout) clearTimeout(feedbackTimeout);
+  
+  // Update message and style
+  actionFeedback.textContent = message;
+  actionFeedback.className = 'show ' + type;
+  
+  // Auto-hide after 1 second
+  feedbackTimeout = setTimeout(() => {
+    actionFeedback.classList.remove('show');
+  }, 1000);
+}
 
 function updateStatus(element, text, color) {
   if (element) { element.textContent = text; element.style.color = color; }
@@ -121,45 +151,74 @@ function processBlinks(landmarks) {
   const rightClosed = rightEar < BLINK_CLOSE_THRESHOLD;
   const rightOpen = rightEar > BLINK_OPEN_THRESHOLD;
   
-  // Left eye press & hold for drag
-  if (leftClosed && rightOpen) {
-    if (!leftEyeClosed) {
-      leftEyeClosed = true;
-      leftEyeCloseTime = now;
-      dragPending = true;
-    } else if (dragPending && now - leftEyeCloseTime >= DRAG_HOLD_MS) {
-      dragPending = false;
-      if (!isDragging) {
-        isDragging = true;
-        window.electronAPI.mouseDown('left');
-        updateStatus(statusElements.click, "Dragging...", "#f59e0b");
-        updateStatus(statusElements.drag, "Hold left eye closed", "#f59e0b");
-      }
+  // Double left blink detection for drag toggle
+  if (leftClosed && rightOpen && leftEyeWasOpen) {
+    leftEyeWasOpen = false;
+    leftBlinkCount++;
+    lastLeftBlinkTime = now;
+    
+    console.log(`[LeftBlink] Count: ${leftBlinkCount}, EAR: ${leftEar.toFixed(3)}`);
+    
+    // Visual feedback for first blink
+    if (leftBlinkCount === 1) {
+      updateStatus(statusElements.drag, 'Blink again to toggle drag', '#f39c12');
     }
-  } else if (leftOpen) {
-    if (leftEyeClosed) {
-      leftEyeClosed = false;
-      dragPending = false;
+    
+    // Check if this is second blink within window
+    if (leftBlinkCount === 2) {
+      isDragging = !isDragging;
+      console.log(`[LeftBlink] Drag toggled: ${isDragging}`);
       if (isDragging) {
-        setTimeout(() => {
-          if (!leftEyeClosed) {
-            isDragging = false;
-            window.electronAPI.mouseUp('left');
-            updateStatus(statusElements.click, "Released", "#4ecca3");
-            updateStatus(statusElements.drag, "Ready", "#a0a0a0");
-          }
-        }, DRAG_RELEASE_DELAY_MS);
-      } else if (now - lastLeftClickTime > CLICK_COOLDOWN) {
-        window.electronAPI.mouseClick('left');
-        lastLeftClickTime = now;
-        updateStatus(statusElements.click, "Left Click", "#4ecca3");
-        setTimeout(() => {
-          if (Date.now() - lastLeftClickTime >= 1000) {
-            updateStatus(statusElements.click, "Waiting...", "#a0a0a0");
-          }
-        }, 1000);
+        window.electronAPI.mouseDown('left');
+        updateStatus(statusElements.drag, 'Dragging (Double-blink to stop)', '#4ecca3');
+        showActionFeedback('DRAG ON', 'drag');
+      } else {
+        window.electronAPI.mouseUp('left');
+        updateStatus(statusElements.drag, 'Ready', '#a0a0a0');
+        showActionFeedback('DRAG OFF', 'drag');
       }
+      leftBlinkCount = 0;
     }
+  }
+  
+  if (leftOpen && !leftEyeWasOpen) {
+    leftEyeWasOpen = true;
+  }
+  
+  // Reset left blink count if window expired
+  if (leftBlinkCount > 0 && now - lastLeftBlinkTime > DOUBLE_BLINK_WINDOW) {
+    leftBlinkCount = 0;
+  }
+  
+  // Double right blink detection for paste
+  if (rightClosed && leftOpen && rightEyeWasOpen) {
+    rightEyeWasOpen = false;
+    rightBlinkCount++;
+    lastRightBlinkTime = now;
+    
+    if (rightBlinkCount === 2 && now - lastRightClickTime > CLICK_COOLDOWN) {
+      // Trigger paste command
+      if (process.platform === 'darwin') {
+        // macOS: Cmd+V
+        const { spawn } = require('child_process');
+        spawn('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down']);
+      }
+      updateStatus(statusElements.click, 'Paste', '#a855f7');
+      lastRightClickTime = now;
+      rightBlinkCount = 0;
+      setTimeout(() => {
+        updateStatus(statusElements.click, 'Waiting...', '#a0a0a0');
+      }, 500);
+    }
+  }
+  
+  if (rightOpen && !rightEyeWasOpen) {
+    rightEyeWasOpen = true;
+  }
+  
+  // Reset right blink count if window expired
+  if (rightBlinkCount > 0 && now - lastRightBlinkTime > DOUBLE_BLINK_WINDOW) {
+    rightBlinkCount = 0;
   }
   
   // Right eye wink = right click (disabled while dragging)
@@ -185,6 +244,106 @@ async function refreshBoundsCache() {
 // Use iris landmarks (468, 473) for precise eye tracking
 const IRIS_LEFT = 468;
 const IRIS_RIGHT = 473;
+
+function detectGazeZone(x, y) {
+  if (!cachedBounds) return null;
+  
+  const screenW = cachedBounds.width;
+  const screenH = cachedBounds.height;
+  
+  // Check if cursor is in trigger zones
+  if (y < GAZE_BAR_THRESHOLD && x > screenW * 0.2 && x < screenW * 0.8) {
+    return 'top';
+  }
+  if (y > screenH - GAZE_BAR_THRESHOLD && x > screenW * 0.2 && x < screenW * 0.8) {
+    return 'bottom';
+  }
+  if (x < GAZE_BAR_THRESHOLD && y > screenH * 0.2 && y < screenH * 0.8) {
+    return 'left';
+  }
+  if (x > screenW - GAZE_BAR_THRESHOLD && y > screenH * 0.2 && y < screenH * 0.8) {
+    return 'right';
+  }
+  return null;
+}
+
+function updateGazeUI(x, y, zone) {
+  if (!gazeCircle || !gazeBars) return;
+  
+  const now = Date.now();
+  
+  if (zone) {
+    // Show circle at cursor position
+    gazeCircle.style.left = x + 'px';
+    gazeCircle.style.top = y + 'px';
+    gazeCircle.classList.add('active');
+    
+    // Check if we're holding gaze
+    if (zone === currentGazeZone) {
+      const gazeDuration = now - gazeStartTime;
+      if (gazeDuration >= GAZE_TRIGGER_MS) {
+        gazeCircle.classList.add('filling');
+        triggerGazeAction(zone);
+        currentGazeZone = null;
+        gazeStartTime = 0;
+      } else {
+        // Partial fill based on progress
+        const progress = gazeDuration / GAZE_TRIGGER_MS;
+        if (progress > 0.5) {
+          gazeCircle.classList.add('filling');
+        }
+      }
+    } else {
+      currentGazeZone = zone;
+      gazeStartTime = now;
+      gazeCircle.classList.remove('filling');
+    }
+    
+    // Highlight the bar
+    document.querySelectorAll('.gaze-bar').forEach(bar => bar.classList.remove('triggered'));
+    const barClass = '.gaze-bar-' + zone;
+    const bar = document.querySelector(barClass);
+    if (bar) bar.classList.add('triggered');
+  } else {
+    gazeCircle.classList.remove('active', 'filling');
+    currentGazeZone = null;
+    gazeStartTime = 0;
+    document.querySelectorAll('.gaze-bar').forEach(bar => bar.classList.remove('triggered'));
+  }
+}
+
+function triggerGazeAction(zone) {
+  switch(zone) {
+    case 'top':
+      // Scroll up
+      window.electronAPI.scroll(0, 360);
+      updateStatus(statusElements.scroll, 'Scrolling Up', '#4ecca3');
+      showActionFeedback('SCROLL ▲', 'scroll');
+      setTimeout(() => updateStatus(statusElements.scroll, 'Move to scroll', '#a0a0a0'), 500);
+      break;
+    case 'bottom':
+      // Scroll down
+      window.electronAPI.scroll(0, -360);
+      updateStatus(statusElements.scroll, 'Scrolling Down', '#4ecca3');
+      showActionFeedback('SCROLL ▼', 'scroll');
+      setTimeout(() => updateStatus(statusElements.scroll, 'Move to scroll', '#a0a0a0'), 500);
+      break;
+    case 'left':
+      // Alt+Tab left (previous window) - macOS uses Cmd+Shift+Tab
+      window.electronAPI.altTab('left');
+      updateStatus(statusElements.click, 'Switch App ←', '#a855f7');
+      showActionFeedback('APP ◀', 'click');
+      setTimeout(() => updateStatus(statusElements.click, 'Waiting...', '#a0a0a0'), 500);
+      break;
+    case 'right':
+      // Alt+Tab right (next window) - macOS uses Cmd+Tab
+      window.electronAPI.altTab('right');
+      updateStatus(statusElements.click, 'Switch App →', '#a855f7');
+      showActionFeedback('APP ▶', 'click');
+      setTimeout(() => updateStatus(statusElements.click, 'Waiting...', '#a0a0a0'), 500);
+      break;
+  }
+}
 
 function processLandmarks(landmarks) {
   if (!isTracking || !landmarks || landmarks.length === 0) return;
@@ -228,6 +387,10 @@ function processLandmarks(landmarks) {
   // Apply exponential smoothing
   cursorX = cursorX + ALPHA_POS * (clampedX - cursorX);
   cursorY = cursorY + ALPHA_POS * (clampedY - cursorY);
+  
+  // Check for gaze zones
+  const gazeZone = detectGazeZone(cursorX, cursorY);
+  updateGazeUI(cursorX, cursorY, gazeZone);
   
   moveCursor(cursorX, cursorY);
 }
@@ -384,10 +547,8 @@ async function startTracking() {
     if (buttons.recenter) buttons.recenter.disabled = false;
     if (buttons.toggleVideo) buttons.toggleVideo.disabled = false;
 
-    // Automatically enable speech mode when tracking starts
-    if (!isSpeechActive) {
-      await startSpeech();
-    }
+    // Don't auto-start speech mode - user will activate when needed
+    // Speech mode will be enabled when user focuses on an input field
   } catch (error) {
     console.error('Error starting camera:', error);
     updateStatus(statusElements.eye, 'Camera Error: ' + error.message, '#e94560');
@@ -408,11 +569,9 @@ async function stopTracking() {
   videoVisible = false;
   const videoContainer = document.getElementById('video-container');
   if (videoContainer) videoContainer.classList.remove('visible');
-
-  // Stop speech mode if active
-  if (isSpeechActive) {
-    await stopSpeech();
-  }
+  
+  // Hide gaze circle
+  if (gazeCircle) gazeCircle.classList.remove('active', 'filling');
 }
 
 function recenter() {
@@ -441,6 +600,25 @@ window.addEventListener('load', () => {
   buttons.recenter = document.getElementById('recenter');
   buttons.toggleVideo = document.getElementById('toggle-video');
   buttons.toggleSpeech = document.getElementById('toggle-speech');
+  
+  // Initialize gaze UI elements
+  gazeCircle = document.getElementById('gaze-circle');
+  gazeBars = document.getElementById('gaze-bars');
+  actionFeedback = document.getElementById('action-feedback');
+  
+  // Listen for text mode changes to auto-enable/disable speech
+  window.electronAPI.onTextModeChanged((isTextMode) => {
+    console.log('[TextMode] Changed to:', isTextMode);
+    if (isTextMode && !isSpeechActive && isTracking) {
+      // Auto-enable speech when entering text input
+      startSpeech();
+      updateStatus(statusElements.speech, 'Auto-enabled (text input)', '#4ecca3');
+    } else if (!isTextMode && isSpeechActive) {
+      // Auto-disable speech when leaving text input
+      stopSpeech();
+      updateStatus(statusElements.speech, 'Auto-disabled', '#a0a0a0');
+    }
+  });
 
   const sensitivitySlider = document.getElementById('sensitivity-slider');
   const sensitivityValue = document.getElementById('sensitivity-value');
@@ -452,6 +630,13 @@ window.addEventListener('load', () => {
     });
   }
 
+  // Auto-start tracking in overlay mode
+  setTimeout(() => {
+    if (!isTracking) {
+      startTracking();
+    }
+  }, 1000);
+  
   // Load speech settings and setup engine selector
   const speechEngineSelect = document.getElementById('speech-engine-select');
   if (speechEngineSelect) {

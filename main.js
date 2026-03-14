@@ -6,6 +6,7 @@ const server = require('./server');
 const VSRHandler = require('./vsr-handler');
 const SpeechHandler = require('./speech-handler');
 const GoogleSpeechHandler = require('./google-speech-handler');
+const CursorMonitor = require('./cursor-monitor');
 
 let robot = null;
 let useNativeControl = false;
@@ -92,6 +93,34 @@ function sendCursorMove(x, y) {
 function sendScroll(dx, dy) {
   if (cursorHelper && cursorHelper.stdin) {
     cursorHelper.stdin.write(`SCROLL ${dx} ${dy}\n`);
+  } else if (process.platform === 'darwin') {
+    // macOS: Use AppleScript to simulate scroll wheel events
+    // Positive dy = scroll up, negative = scroll down
+    const scrollAmount = Math.round(dy / 30); // Convert to scroll units
+    const script = `
+      tell application "System Events"
+        tell (first application process whose frontmost is true)
+          set frontApp to name
+        end tell
+        tell process frontApp
+          key code 125 using {shift down} -- Simulate scroll
+        end tell
+      end tell
+    `;
+    
+    // Use a simpler approach: send arrow key events for scrolling
+    if (dy > 0) {
+      // Scroll up - send up arrow multiple times
+      for (let i = 0; i < 3; i++) {
+        spawn('osascript', ['-e', 'tell application "System Events" to key code 126']);
+      }
+    } else if (dy < 0) {
+      // Scroll down - send down arrow multiple times
+      for (let i = 0; i < 3; i++) {
+        spawn('osascript', ['-e', 'tell application "System Events" to key code 125']);
+      }
+    }
+    console.log(`[Scroll] macOS scroll: dy=${dy}`);
   } else if (process.platform === 'linux') {
     if (dy > 0) spawn('xdotool', ['click', '4']);  // scroll up
     if (dy < 0) spawn('xdotool', ['click', '5']);  // scroll down
@@ -128,6 +157,7 @@ let mainWindow;
 let vsrHandler = null;
 let speechHandler = null;
 let googleSpeechHandler = null;
+let cursorMonitor = null;
 let activeSpeechEngine = 'whisper'; // 'whisper' or 'google'
 
 const initialGoogleKey = process.env.GOOGLE_SPEECH_API_KEY || null;
@@ -138,9 +168,23 @@ let speechSettings = {
 };
 
 function createWindow() {
+  const { width, height } = screen.getPrimaryDisplay().bounds;
+  
   mainWindow = new BrowserWindow({
-    width: 1200,
-    height: 800,
+    width,
+    height,
+    x: 0,
+    y: 0,
+    transparent: true,
+    frame: false,
+    alwaysOnTop: true,
+    skipTaskbar: true,
+    resizable: false,
+    movable: false,
+    hasShadow: false,
+    visibleOnAllWorkspaces: true,
+    fullscreenable: false,
+    kiosk: false,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -148,6 +192,18 @@ function createWindow() {
       backgroundThrottling: false
     }
   });
+  
+  // Set window to ignore mouse events except on interactive regions
+  mainWindow.setIgnoreMouseEvents(true, { forward: true });
+  
+  // Ensure window stays on top even when other apps are in fullscreen
+  // Use 'floating' level which stays above fullscreen windows
+  mainWindow.setAlwaysOnTop(true, 'floating', 1);
+  
+  // Additional setting to ensure visibility over fullscreen apps
+  if (process.platform === 'darwin') {
+    app.dock.hide(); // Hide from dock on macOS
+  }
 
   // Load from localhost server
   mainWindow.loadURL('http://localhost:3000');
@@ -282,6 +338,69 @@ ipcMain.handle('set-fullscreen', async (event, { fullscreen }) => {
   }
 });
 
+// IPC handler for Alt+Tab (window switching)
+let lastAltTabTime = 0;
+const ALT_TAB_COOLDOWN = 1000; // Prevent rapid-fire switching
+
+ipcMain.handle('alt-tab', async (event, { direction }) => {
+  try {
+    const now = Date.now();
+    if (now - lastAltTabTime < ALT_TAB_COOLDOWN) {
+      return { success: false, error: 'Cooldown active' };
+    }
+    lastAltTabTime = now;
+    
+    if (process.platform === 'darwin') {
+      // macOS: Get list of running apps and switch to next/previous
+      const script = direction === 'left'
+        ? `tell application "System Events"
+             set frontApp to name of first application process whose frontmost is true
+             set appList to name of every application process whose visible is true
+             set appCount to count of appList
+             repeat with i from 1 to appCount
+               if item i of appList is frontApp then
+                 if i is 1 then
+                   set nextApp to item appCount of appList
+                 else
+                   set nextApp to item (i - 1) of appList
+                 end if
+                 exit repeat
+               end if
+             end repeat
+             tell process nextApp to set frontmost to true
+           end tell`
+        : `tell application "System Events"
+             set frontApp to name of first application process whose frontmost is true
+             set appList to name of every application process whose visible is true
+             set appCount to count of appList
+             repeat with i from 1 to appCount
+               if item i of appList is frontApp then
+                 if i is appCount then
+                   set nextApp to item 1 of appList
+                 else
+                   set nextApp to item (i + 1) of appList
+                 end if
+                 exit repeat
+               end if
+             end repeat
+             tell process nextApp to set frontmost to true
+           end tell`;
+      
+      spawn('osascript', ['-e', script]);
+      console.log(`[Alt-Tab] Switched ${direction}`);
+    } else if (process.platform === 'linux') {
+      // Linux: Alt+Tab or Alt+Shift+Tab
+      const keys = direction === 'left' ? 'alt+shift+Tab' : 'alt+Tab';
+      spawn('xdotool', ['key', keys]);
+      console.log(`[Alt-Tab] Switched ${direction}`);
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('[Alt-Tab] Error:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 app.whenReady().then(() => {
   startCursorHelper();
   createWindow();
@@ -294,6 +413,16 @@ app.whenReady().then(() => {
   if (speechSettings.googleApiKey) {
     googleSpeechHandler = new GoogleSpeechHandler(speechSettings.googleApiKey);
   }
+  
+  // Initialize cursor monitor to detect text input mode
+  cursorMonitor = new CursorMonitor();
+  cursorMonitor.start((isTextMode) => {
+    console.log(`[CursorMonitor] Text mode: ${isTextMode}`);
+    // Notify renderer about text mode change
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('text-mode-changed', isTextMode);
+    }
+  });
   
   const handleTranscript = (text) => {
     // Type the transcribed text - now handled by unified type-text handler
