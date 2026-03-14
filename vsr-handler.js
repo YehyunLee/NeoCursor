@@ -63,11 +63,11 @@ class VSRHandler {
     const videoPath = path.join(this.outputDir, `speech_${timestamp}.mp4`);
     
     try {
-      await this.saveFramesAsVideo(videoPath);
-      console.log(`[VSR] Video saved to ${videoPath}`);
+      const savedPath = await this.saveFramesAsVideo(videoPath);
+      console.log(`[VSR] Video saved to ${savedPath}`);
       
       // Process with VSR engine (placeholder for now)
-      const rawResult = await this.processVideo(videoPath);
+      const rawResult = await this.processVideo(savedPath);
       console.log(`[VSR] Raw inference: "${rawResult.text}"`);
       
       // Improve transcript with LLM
@@ -108,6 +108,7 @@ class VSRHandler {
       });
       
       // Create a simple video using ffmpeg if available
+      let ffmpegFailed = false;
       const ffmpeg = spawn('ffmpeg', [
         '-framerate', String(this.fps),
         '-i', path.join(frameDir, 'frame_%04d.jpg'),
@@ -118,19 +119,19 @@ class VSRHandler {
       ]);
 
       ffmpeg.on('close', (code) => {
-        // Cleanup frame directory
-        fs.rmSync(frameDir, { recursive: true, force: true });
-        
+        if (ffmpegFailed) return;
+        // Only clean up frames when ffmpeg succeeded (video file replaces them)
         if (code === 0) {
+          fs.rmSync(frameDir, { recursive: true, force: true });
           resolve(outputPath);
         } else {
-          reject(new Error(`ffmpeg exited with code ${code}`));
+          resolve(frameDir);
         }
       });
 
       ffmpeg.on('error', (err) => {
-        // If ffmpeg not available, just resolve with frame directory
-        console.warn('[VSR] ffmpeg not available, skipping video creation');
+        ffmpegFailed = true;
+        console.warn('[VSR] ffmpeg not available, keeping frames directory');
         resolve(frameDir);
       });
     });
@@ -139,7 +140,7 @@ class VSRHandler {
   async processVideo(videoPath) {
     return new Promise((resolve, reject) => {
       // Determine Python executable (try python3 first, fallback to python)
-      const pythonCmd = process.platform === 'win32' ? 'python' : 'python3';
+      const pythonCmd = process.platform === 'win32' ? 'py' : 'python3';
       const scriptPath = path.join(__dirname, 'vsr_inference.py');
       
       console.log(`[VSR] Running inference: ${pythonCmd} ${scriptPath} ${videoPath}`);
