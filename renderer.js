@@ -6,8 +6,11 @@ let videoVisible = false;
 let isVSRRecording = false;
 let vsrFrameInterval = null;
 let vsrFrameCount = 0;
-const VSR_FPS = 16;
+const VSR_FPS = 12;
 const VSR_FRAME_INTERVAL = 1000 / VSR_FPS;
+const VSR_CAPTURE_WIDTH = 320;
+let vsrCanvas = null;
+let vsrCanvasCtx = null;
 
 // Head tracking + stability state
 let centerPoint = null;
@@ -536,25 +539,28 @@ async function startVSRRecording() {
   updateStatus(statusElements.speech, 'Recording...', '#e94560');
   console.log('[VSR] Recording started');
 
+  // Lazily create a reusable capture canvas scaled to VSR_CAPTURE_WIDTH
+  if (!vsrCanvas) {
+    vsrCanvas = document.createElement('canvas');
+    vsrCanvasCtx = vsrCanvas.getContext('2d');
+  }
+  const aspect = videoElement.videoHeight / (videoElement.videoWidth || 1);
+  vsrCanvas.width = VSR_CAPTURE_WIDTH;
+  vsrCanvas.height = Math.round(VSR_CAPTURE_WIDTH * aspect);
+
   // Capture frames at VSR_FPS
   vsrFrameInterval = setInterval(async () => {
     if (!isVSRRecording || !videoElement) return;
 
     try {
-      // Create a temporary canvas to capture the current video frame
-      const tempCanvas = document.createElement('canvas');
-      tempCanvas.width = videoElement.videoWidth;
-      tempCanvas.height = videoElement.videoHeight;
-      const tempCtx = tempCanvas.getContext('2d');
-      tempCtx.drawImage(videoElement, 0, 0);
-
-      // Convert to base64 JPEG
-      const frameData = tempCanvas.toDataURL('image/jpeg', 0.7);
+      vsrCanvasCtx.drawImage(videoElement, 0, 0, vsrCanvas.width, vsrCanvas.height);
+      const frameData = vsrCanvas.toDataURL('image/jpeg', 0.5);
       await window.electronAPI.vsrAddFrame(frameData);
       vsrFrameCount++;
 
-      // Update status with frame count
-      updateStatus(statusElements.speech, `Recording... (${vsrFrameCount} frames)`, '#e94560');
+      if (vsrFrameCount % 4 === 0) {
+        updateStatus(statusElements.speech, `Recording... (${vsrFrameCount} frames)`, '#e94560');
+      }
     } catch (error) {
       console.error('[VSR] Error capturing frame:', error);
     }
