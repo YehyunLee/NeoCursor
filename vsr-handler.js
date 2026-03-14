@@ -117,8 +117,9 @@ class VSRHandler {
       const ffmpeg = spawn('ffmpeg', [
         '-framerate', String(this.fps),
         '-i', path.join(frameDir, 'frame_%04d.jpg'),
-        '-c:v', 'libx264',
-        '-pix_fmt', 'yuv420p',
+        '-vf', 'format=gray',
+        '-c:v', 'mpeg4',
+        '-q:v', '5',
         '-y',
         outputPath
       ]);
