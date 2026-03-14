@@ -4,6 +4,11 @@ const path = require('path');
 const app = express();
 const PORT = 3000;
 
+// MediaPipe face_mesh: serve from npm package (has both SIMD and non-SIMD WASM)
+app.use('/mediapipe/face_mesh', express.static(
+  path.join(__dirname, 'node_modules', '@mediapipe', 'face_mesh')
+));
+
 // Serve static files from root directory
 app.use(express.static(__dirname));
 
