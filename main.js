@@ -16,7 +16,7 @@ function createWindow() {
     }
   });
 
-  // Load from localhost server (required for WebGazer HTTPS requirement)
+  // Load from localhost server
   mainWindow.loadURL('http://localhost:3000');
 
   // Open DevTools in development
