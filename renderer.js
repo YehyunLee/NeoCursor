@@ -6,16 +6,18 @@ let videoVisible = false;
 let centerPoint = null;
 let sensitivity = 15;
 
-// Tiny deadzone on raw landmark delta (normalized coords, ~0.3% of face)
-const DEADZONE = 0.002;
+// Deadzone on raw landmark delta (normalized coords)
+const DEADZONE = 0.003;
 
-// Exponential moving average — instant direction response, dampens jitter
-const EMA_ALPHA = 0.5;
+// Adaptive EMA: alpha varies by movement magnitude
+const EMA_ALPHA_MIN = 0.08;  // at rest: heavy smoothing (kills jitter)
+const EMA_ALPHA_MAX = 0.55;  // moving: responsive
+const ADAPT_THRESHOLD = 8;   // pixel delta where we switch from rest to moving
 let emaX = null;
 let emaY = null;
 let lastEmittedX = null;
 let lastEmittedY = null;
-const SMOOTHING_DEADZONE = 1; // suppress sub-pixel jitter
+const SMOOTHING_DEADZONE = 3; // pixels — suppress rest jitter
 
 // Cache screen bounds to skip IPC round-trip every frame
 let cachedBounds = null;
@@ -105,11 +107,16 @@ function processBlinks(landmarks) {
   }
 }
 
-// EMA smoothing — reacts to direction changes within one frame
+// Adaptive EMA: small delta = heavy smoothing (stable), large delta = light smoothing (responsive)
 function smoothCoordinates(x, y) {
   if (emaX === null) { emaX = x; emaY = y; }
-  emaX = EMA_ALPHA * x + (1 - EMA_ALPHA) * emaX;
-  emaY = EMA_ALPHA * y + (1 - EMA_ALPHA) * emaY;
+  const dx = Math.abs(x - emaX);
+  const dy = Math.abs(y - emaY);
+  const mag = Math.max(dx, dy);
+  const t = Math.min(mag / ADAPT_THRESHOLD, 1);
+  const alpha = EMA_ALPHA_MIN + t * (EMA_ALPHA_MAX - EMA_ALPHA_MIN);
+  emaX = alpha * x + (1 - alpha) * emaX;
+  emaY = alpha * y + (1 - alpha) * emaY;
   let tx = Math.round(emaX);
   let ty = Math.round(emaY);
   if (lastEmittedX !== null && Math.hypot(tx - lastEmittedX, ty - lastEmittedY) < SMOOTHING_DEADZONE) {
@@ -122,7 +129,7 @@ function smoothCoordinates(x, y) {
 
 function setCenterPoint(landmarks) {
   if (landmarks && landmarks.length > 0) {
-    centerPoint = { x: landmarks[1].x, y: landmarks[1].y };
+    centerPoint = getTrackedPosition(landmarks);
     updateStatus(statusElements.calibration, 'Center Set', '#4ecca3');
   }
 }
@@ -132,15 +139,24 @@ async function refreshBoundsCache() {
   if (r.success) { cachedBounds = r.bounds; boundsCacheTime = Date.now(); }
 }
 
+// Blend nose tip (1), nose bridge (6), chin (152), forehead (10) to reduce single-point noise
+const TRACK_LANDMARKS = [1, 6, 152, 10];
+
+function getTrackedPosition(landmarks) {
+  let sx = 0, sy = 0;
+  for (const i of TRACK_LANDMARKS) { sx += landmarks[i].x; sy += landmarks[i].y; }
+  return { x: sx / TRACK_LANDMARKS.length, y: sy / TRACK_LANDMARKS.length };
+}
+
 function processLandmarks(landmarks) {
   if (!isTracking || !landmarks || landmarks.length === 0) return;
   if (!centerPoint) { setCenterPoint(landmarks); return; }
 
-  // Refresh bounds cache every few seconds
   if (Date.now() - boundsCacheTime > BOUNDS_CACHE_MS) refreshBoundsCache();
 
-  const currentX = landmarks[1].x;
-  const currentY = landmarks[1].y;
+  const pos = getTrackedPosition(landmarks);
+  const currentX = pos.x;
+  const currentY = pos.y;
 
   let rawDX = currentX - centerPoint.x;
   let rawDY = currentY - centerPoint.y;
