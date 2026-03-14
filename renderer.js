@@ -4,11 +4,11 @@ let isCalibrated = false;
 let videoVisible = true;
 let calibrationPoints = [];
 let currentCalibrationIndex = 0;
-let clicksPerPoint = 5; // Multiple clicks per point for better accuracy
+let clicksPerPoint = 8; // More clicks per point for better accuracy
 
-// Advanced smoothing
+// Advanced smoothing - larger buffer for more stability
 let smoothingBuffer = [];
-const SMOOTHING_BUFFER_SIZE = 7;
+const SMOOTHING_BUFFER_SIZE = 10;
 const CALIBRATION_STORAGE_KEY = 'silentcursor_webgazer_calibration';
 
 const statusElements = {
@@ -52,21 +52,32 @@ function smoothCoordinates(x, y) {
   return { x: Math.round(avgX), y: Math.round(avgY) };
 }
 
-function create9PointGrid() {
+function create13PointGrid() {
   const points = [];
-  const margin = 10; // 10% margin from edges
+  const margin = 8; // 8% margin from edges
   
-  // 3x3 grid positions (percentage of screen)
+  // 13-point grid: corners, edges, center, and mid-points for better coverage
   const positions = [
-    [margin, margin],           // Top-left
-    [50, margin],               // Top-center
-    [100 - margin, margin],     // Top-right
-    [margin, 50],               // Middle-left
-    [50, 50],                   // Center
-    [100 - margin, 50],         // Middle-right
-    [margin, 100 - margin],     // Bottom-left
-    [50, 100 - margin],         // Bottom-center
-    [100 - margin, 100 - margin] // Bottom-right
+    // Corners
+    [margin, margin],                    // Top-left
+    [100 - margin, margin],              // Top-right
+    [margin, 100 - margin],              // Bottom-left
+    [100 - margin, 100 - margin],        // Bottom-right
+    
+    // Edge midpoints
+    [50, margin],                        // Top-center
+    [50, 100 - margin],                  // Bottom-center
+    [margin, 50],                        // Middle-left
+    [100 - margin, 50],                  // Middle-right
+    
+    // Center
+    [50, 50],                            // Center
+    
+    // Quarter points for extra coverage
+    [25, 25],                            // Upper-left quarter
+    [75, 25],                            // Upper-right quarter
+    [25, 75],                            // Lower-left quarter
+    [75, 75]                             // Lower-right quarter
   ];
   
   positions.forEach(([x, y], index) => {
@@ -92,7 +103,7 @@ function showCalibrationOverlay() {
   existingPoints.forEach(p => p.remove());
   
   // Create calibration points
-  calibrationPoints = create9PointGrid();
+  calibrationPoints = create13PointGrid();
   currentCalibrationIndex = 0;
   
   console.log('Creating calibration points:', calibrationPoints);
@@ -131,7 +142,7 @@ function highlightCurrentPoint() {
   calibrationPoints.forEach(p => {
     const el = document.getElementById(`cal-point-${p.id}`);
     if (el) {
-      el.style.transform = 'translate(-50%, -50%) scale(1)';
+      el.classList.remove('active');
       el.style.zIndex = '10000';
     }
   });
@@ -141,7 +152,7 @@ function highlightCurrentPoint() {
     const currentPoint = calibrationPoints[currentCalibrationIndex];
     const el = document.getElementById(`cal-point-${currentPoint.id}`);
     if (el) {
-      el.style.transform = 'translate(-50%, -50%) scale(1.5)';
+      el.classList.add('active');
       el.style.zIndex = '10002';
     }
   }
@@ -224,9 +235,10 @@ function updateCalibrationInstructions(completed = false) {
   }
   
   const steps = [
-    'Get centered and steady in frame.',
-    'Track the glowing target with your eyes.',
-    'Click <strong>5×</strong> while focusing on each point.'
+    'Keep your head steady and centered.',
+    'Track the glowing target with your eyes only.',
+    'Click <strong>8×</strong> while focusing on each point.',
+    'Maintain good lighting on your face.'
   ];
   const pointNumber = currentCalibrationIndex + 1;
   calibrationUI.instructions.innerHTML = `
@@ -238,10 +250,11 @@ function updateCalibrationInstructions(completed = false) {
 
 function completeCalibration() {
   const overlay = calibrationUI.overlay;
+  const totalSamples = calibrationPoints.length * clicksPerPoint;
   
   updateCalibrationInstructions(true);
   if (calibrationUI.progressText) {
-    calibrationUI.progressText.textContent = 'Calibration complete! Stabilizing tracking...';
+    calibrationUI.progressText.textContent = `Calibration complete! ${totalSamples} samples collected. Optimizing model...`;
   }
   if (calibrationUI.progressBar) {
     calibrationUI.progressBar.style.width = '100%';
@@ -256,8 +269,10 @@ function completeCalibration() {
     });
     
     isCalibrated = true;
-    updateStatus(statusElements.calibration, 'Calibrated (45 points)', '#4ecca3');
+    updateStatus(statusElements.calibration, `Calibrated (${totalSamples} samples)`, '#4ecca3');
     saveCalibrationData();
+    
+    console.log(`Calibration complete with ${totalSamples} training samples across ${calibrationPoints.length} points`);
   }, 1500);
 }
 
@@ -268,13 +283,20 @@ async function initializeWebGazer() {
     return;
   }
 
-  console.log('Initializing WebGazer with enhanced calibration...');
+  console.log('Initializing WebGazer with maximum accuracy settings...');
 
-  // Optimize WebGazer settings for accuracy
+  // Optimize WebGazer settings for maximum accuracy
   webgazer.params.showVideo = true;
   webgazer.params.showFaceOverlay = true;
   webgazer.params.showFaceFeedbackBox = true;
   webgazer.params.showGazeDot = true;
+  
+  // Video quality settings for better face detection
+  webgazer.params.videoViewerWidth = 320;
+  webgazer.params.videoViewerHeight = 240;
+  
+  // Use ridge regression for better accuracy (more stable than default)
+  webgazer.setRegression('ridge');
   
   webgazer.setGazeListener(async function(data, timestamp) {
     if (data == null || !isTracking || !isCalibrated) {

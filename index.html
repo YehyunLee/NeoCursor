@@ -278,13 +278,24 @@
       animation: pulse 1s ease-in-out infinite;
       box-shadow: 0 0 25px rgba(255, 175, 189, 0.9);
       z-index: 100000;
+      transition: transform 0.3s ease, box-shadow 0.3s ease, border 0.3s ease, background 0.3s ease;
+      opacity: 0.6;
+    }
+
+    .calibration-point.active {
+      background: radial-gradient(circle, #ff4d4f 0%, rgba(255, 77, 79, 0.35));
+      border-color: rgba(255, 102, 102, 0.95);
+      box-shadow: 0 0 45px rgba(255, 77, 79, 0.95);
+      transform: translate(-50%, -50%) scale(1.5);
+      opacity: 1;
     }
 
     .calibration-point.completed {
-      background: radial-gradient(circle, #4ecca3 0%, rgba(78, 204, 163, 0.2));
+      background: radial-gradient(circle, #4ecca3 0%, rgba(78, 204, 163, 0.25));
       border-color: rgba(78, 204, 163, 0.9);
       box-shadow: 0 0 25px rgba(78, 204, 163, 0.8);
       animation: none;
+      opacity: 0.4;
     }
 
     @keyframes pulse {
@@ -302,10 +313,11 @@
       <button id="start-tracking">Start Eye Tracking</button>
       <button id="stop-tracking" class="danger">Stop Tracking</button>
       <button id="recalibrate" class="secondary">Recalibrate</button>
+      <button id="fine-tune" class="secondary">Fine Tune Center</button>
       <button id="toggle-video" class="secondary">Toggle Video Preview</button>
     </div>
 
-    <div class="status">
+    <div class="status-grid">
       <div class="status-item">
         <h3>Eye Tracking</h3>
         <p id="eye-status">Initializing...</p>
@@ -316,7 +328,26 @@
       </div>
       <div class="status-item">
         <h3>Silent Speech</h3>
-        <p id="speech-status">Initializing...</p>
+        <p id="speech-status">Coming Soon</p>
+      </div>
+    </div>
+
+    <div class="precision-panel">
+      <h3>Precision Controls</h3>
+      <p class="precision-subtitle">Dial in cursor feel after calibration</p>
+      <div class="precision-control">
+        <div>
+          <label for="smoothing-slider">Cursor smoothing</label>
+          <span id="smoothing-value">10</span>
+        </div>
+        <input type="range" id="smoothing-slider" min="3" max="20" value="10">
+      </div>
+      <div class="precision-control">
+        <div>
+          <label for="deadzone-slider">Deadzone threshold</label>
+          <span id="deadzone-value">20 px</span>
+        </div>
+        <input type="range" id="deadzone-slider" min="0" max="80" value="20">
       </div>
     </div>
 
@@ -346,19 +377,20 @@
       <div class="calibration-progress-card">
         <div class="progress-header">
           <span>Precision Calibration</span>
-          <span class="calibration-pill" id="calibration-point-label">Point 1 / 9</span>
+          <span class="calibration-pill" id="calibration-point-label">Point 1 / 13</span>
         </div>
         <div class="progress-track">
           <div class="progress-bar" id="calibration-progress-bar"></div>
         </div>
-        <p id="calibration-progress-text">Aim your eyes at the highlighted dot and click it 5 times.</p>
+        <p id="calibration-progress-text">Aim your eyes at the highlighted dot and click it 8 times.</p>
       </div>
       <div class="calibration-instructions" id="calibration-instructions">
         <h2>Calibrate for Maximum Accuracy</h2>
         <ul>
-          <li>1. Follow the glowing point with your eyes.</li>
-          <li>2. Click it 5 times while focused on it.</li>
-          <li>3. Repeat across all 9 points.</li>
+          <li>1. Keep your head steady and centered in frame.</li>
+          <li>2. Follow the glowing point with your eyes only.</li>
+          <li>3. Click it 8 times while focused on it.</li>
+          <li>4. Repeat across all 13 points for best results.</li>
         </ul>
       </div>
     </div>
