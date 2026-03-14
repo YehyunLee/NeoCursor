@@ -5,3 +5,13 @@ build/
 .DS_Store
 package-lock.json
 vsr_temp/
+
+# Environments
+.env
+.envrc
+.venv
+env/
+venv/
+ENV/
+env.bak/
+venv.bak/
