@@ -27,6 +27,7 @@ function startCursorHelper() {
   if (!useNativeControl) return;
 
   if (process.platform === 'win32') {
+    // MOUSEEVENTF_WHEEL=0x0800, MOUSEEVENTF_HWHEEL=0x1000; amount in cButtons (120 = one notch)
     const psScript = [
       "Add-Type -MemberDefinition '",
       "[DllImport(\"user32.dll\")] public static extern bool SetCursorPos(int X, int Y);",
@@ -37,9 +38,22 @@ function startCursorHelper() {
         "if($l-eq$null){break}",
         "$p=$l-split' ';",
         "if($p[0]-eq'MOVE'-and$p.Length-ge3){[W.U32]::SetCursorPos([int]$p[1],[int]$p[2])|Out-Null}",
+        "elseif($p[0]-eq'SCROLL'-and$p.Length-ge3){",
+          "$dx=[int]$p[1];$dy=[int]$p[2];",
+          "if($dy-ne0){[W.U32]::mouse_event(0x0800,0,0,$dy,0)}",
+          "if($dx-ne0){[W.U32]::mouse_event(0x1000,0,0,$dx,0)}",
+        "}",
         "elseif($p[0]-eq'CLICK'){",
           "if($p.Length-ge2-and$p[1]-eq'right'){[W.U32]::mouse_event(8,0,0,0,0);Start-Sleep -m 30;[W.U32]::mouse_event(16,0,0,0,0)}",
           "else{[W.U32]::mouse_event(2,0,0,0,0);Start-Sleep -m 30;[W.U32]::mouse_event(4,0,0,0,0)}",
+        "}",
+        "elseif($p[0]-eq'MOUSEDOWN'){",
+          "if($p.Length-ge2-and$p[1]-eq'right'){[W.U32]::mouse_event(8,0,0,0,0)}",
+          "else{[W.U32]::mouse_event(2,0,0,0,0)}",
+        "}",
+        "elseif($p[0]-eq'MOUSEUP'){",
+          "if($p.Length-ge2-and$p[1]-eq'right'){[W.U32]::mouse_event(16,0,0,0,0)}",
+          "else{[W.U32]::mouse_event(4,0,0,0,0)}",
         "}",
       "}"
     ].join(' ');
@@ -72,11 +86,38 @@ function sendCursorMove(x, y) {
   }
 }
 
+function sendScroll(dx, dy) {
+  if (cursorHelper && cursorHelper.stdin) {
+    cursorHelper.stdin.write(`SCROLL ${dx} ${dy}\n`);
+  } else if (process.platform === 'linux') {
+    if (dy > 0) spawn('xdotool', ['click', '4']);  // scroll up
+    if (dy < 0) spawn('xdotool', ['click', '5']);  // scroll down
+    if (dx > 0) spawn('xdotool', ['click', '7']);  // scroll right
+    if (dx < 0) spawn('xdotool', ['click', '6']);  // scroll left
+  }
+}
+
 function sendCursorClick(button) {
   if (cursorHelper && cursorHelper.stdin) {
     cursorHelper.stdin.write(`CLICK ${button}\n`);
   } else if (process.platform === 'linux') {
     spawn('xdotool', ['click', button === 'right' ? '3' : '1']);
+  }
+}
+
+function sendMouseDown(button) {
+  if (cursorHelper && cursorHelper.stdin) {
+    cursorHelper.stdin.write(`MOUSEDOWN ${button}\n`);
+  } else if (process.platform === 'linux') {
+    spawn('xdotool', ['mousedown', button === 'right' ? '3' : '1']);
+  }
+}
+
+function sendMouseUp(button) {
+  if (cursorHelper && cursorHelper.stdin) {
+    cursorHelper.stdin.write(`MOUSEUP ${button}\n`);
+  } else if (process.platform === 'linux') {
+    spawn('xdotool', ['mouseup', button === 'right' ? '3' : '1']);
   }
 }
 
@@ -174,6 +215,49 @@ ipcMain.handle('mouse-click', async (event, { button = 'left' }) => {
   }
 });
 
+ipcMain.handle('mouse-down', async (event, { button = 'left' }) => {
+  try {
+    if (useNativeControl) {
+      sendMouseDown(button);
+    } else {
+      robot.mouseToggle('down', button);
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('Error mouse-down:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('mouse-up', async (event, { button = 'left' }) => {
+  try {
+    if (useNativeControl) {
+      sendMouseUp(button);
+    } else {
+      robot.mouseToggle('up', button);
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('Error mouse-up:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC handler for scrolling (dx = horizontal, dy = vertical; positive dy = scroll up)
+ipcMain.handle('scroll', async (event, { dx, dy }) => {
+  try {
+    if (useNativeControl) {
+      sendScroll(Math.round(dx), Math.round(dy));
+    } else if (robot) {
+      robot.scrollMouse(0, Math.round(dy / 120));
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('Error scrolling:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // IPC handler for fullscreen control
 ipcMain.handle('set-fullscreen', async (event, { fullscreen }) => {
   try {
@@ -186,6 +270,7 @@ ipcMain.handle('set-fullscreen', async (event, { fullscreen }) => {
 });
 
 app.whenReady().then(() => {
+  startCursorHelper();
   createWindow();
   
   // Initialize VSR handler
