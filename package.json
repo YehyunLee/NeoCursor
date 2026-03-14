@@ -33,6 +33,8 @@
     "electron": "^41.0.2"
   },
   "dependencies": {
+    "@mediapipe/camera_utils": "^0.3.1675466862",
+    "@mediapipe/face_mesh": "^0.4.1633559619",
     "express": "^5.2.1",
     "robotjs": "^0.7.0"
   }

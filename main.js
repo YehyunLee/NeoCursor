@@ -34,13 +34,13 @@ function createWindow() {
   });
 }
 
-// IPC handler to get window position for coordinate conversion
-ipcMain.handle('get-window-bounds', async (event) => {
+// IPC handler to get screen bounds for absolute positioning
+ipcMain.handle('get-screen-bounds', async () => {
   try {
-    const bounds = mainWindow.getBounds();
-    return { success: true, bounds };
+    const primaryDisplay = screen.getPrimaryDisplay();
+    return { success: true, bounds: primaryDisplay.bounds };
   } catch (error) {
-    console.error('Error getting window bounds:', error);
+    console.error('Error getting screen bounds:', error);
     return { success: false, error: error.message };
   }
 });
