@@ -8,7 +8,9 @@ let vsrFrameInterval = null;
 let vsrFrameCount = 0;
 const VSR_FPS = 16;
 const VSR_FRAME_INTERVAL = 1000 / VSR_FPS;
-const VSR_CAPTURE_WIDTH = 320;
+const CAMERA_WIDTH = Math.floor(640 / 3);
+const CAMERA_HEIGHT = Math.floor(480 / 3);
+const VSR_CAPTURE_WIDTH = CAMERA_WIDTH;
 let vsrCanvas = null;
 let vsrCanvasCtx = null;
 
@@ -308,6 +310,11 @@ async function initializeTracker() {
       throw new Error('Canvas element not found');
     }
     
+    videoElement.width = CAMERA_WIDTH;
+    videoElement.height = CAMERA_HEIGHT;
+    canvasElement.width = CAMERA_WIDTH;
+    canvasElement.height = CAMERA_HEIGHT;
+
     canvasCtx = canvasElement.getContext('2d');
     console.log('[Init] Video and canvas elements found');
 
@@ -344,8 +351,8 @@ async function startTracking() {
     updateStatus(statusElements.eye, 'Starting camera...', '#f39c12');
     camera = new Camera(videoElement, {
       onFrame: async () => { await faceMesh.send({ image: videoElement }); },
-      width: 320,
-      height: 240
+      width: CAMERA_WIDTH,
+      height: CAMERA_HEIGHT
     });
     await refreshBoundsCache();
     await camera.start();
