@@ -12,9 +12,8 @@ const VSR_CAPTURE_WIDTH = 320;
 let vsrCanvas = null;
 let vsrCanvasCtx = null;
 
-// Head tracking + stability state
+// Head tracking state
 let sensitivity = 15;
-let stabilityLevel = 7; // 1-10 slider
 
 // Cursor smoothing with exponential moving average
 const ALPHA_POS = 0.2;  // Smoothing factor for cursor position
@@ -80,6 +79,10 @@ const CLICK_COOLDOWN = 800;  // ms between clicks
 let lastLeftClickTime = 0;
 let lastRightClickTime = 0;
 
+// Drag state
+let isDragging = false;
+let leftEyeClosed = false;
+
 function updateStatus(element, text, color) {
   if (element) { element.textContent = text; element.style.color = color; }
 }
@@ -98,33 +101,50 @@ function processBlinks(landmarks) {
   const rightEar = calculateEAR(landmarks, RIGHT_EYE);
   const now = Date.now();
   
-  // Check for manual mouse movement - pause tracking if detected
-  if (cursorX !== null && cursorY !== null) {
-    const actualPos = { x: cursorX, y: cursorY };
-    // This will be checked in moveCursor function
-  }
-  
   // Only process clicks if enough time has passed since manual movement
   if (now - lastManualMoveTime <= MANUAL_PAUSE_DURATION) {
     return;
   }
   
-  // Left eye blink detection (wink left = left click)
-  if (leftEar < BLINK_THRESHOLD && rightEar > BLINK_THRESHOLD) {
-    if (now - lastLeftClickTime > CLICK_COOLDOWN) {
-      window.electronAPI.mouseClick('left');
-      lastLeftClickTime = now;
-      updateStatus(statusElements.click, "Left Click", "#4ecca3");
-      setTimeout(() => {
-        if (Date.now() - lastLeftClickTime >= 1000) {
+  const leftClosed = leftEar < BLINK_THRESHOLD;
+  const rightClosed = rightEar < BLINK_THRESHOLD;
+  const leftOpen = leftEar > BLINK_THRESHOLD;
+  const rightOpen = rightEar > BLINK_THRESHOLD;
+  
+  // Left eye hold = drag
+  if (leftClosed && rightOpen) {
+    if (!leftEyeClosed) {
+      // Left eye just closed
+      leftEyeClosed = true;
+      
+      if (!isDragging) {
+        // Start drag
+        isDragging = true;
+        window.electronAPI.mouseDown('left');
+        updateStatus(statusElements.click, "Dragging...", "#f59e0b");
+        updateStatus(statusElements.drag, "Close left eye to release", "#f59e0b");
+      }
+    }
+  } else if (leftOpen) {
+    if (leftEyeClosed) {
+      // Left eye just opened
+      leftEyeClosed = false;
+      
+      if (isDragging) {
+        // End drag
+        isDragging = false;
+        window.electronAPI.mouseUp('left');
+        updateStatus(statusElements.click, "Released", "#4ecca3");
+        updateStatus(statusElements.drag, "Ready", "#a0a0a0");
+        setTimeout(() => {
           updateStatus(statusElements.click, "Waiting...", "#a0a0a0");
-        }
-      }, 1000);
+        }, 1000);
+      }
     }
   }
   
-  // Right eye blink detection (wink right = right click)
-  if (rightEar < BLINK_THRESHOLD && leftEar > BLINK_THRESHOLD) {
+  // Right eye blink = right click (cancels drag if active)
+  if (rightClosed && leftOpen && !isDragging) {
     if (now - lastRightClickTime > CLICK_COOLDOWN) {
       window.electronAPI.mouseClick('right');
       lastRightClickTime = now;
@@ -387,17 +407,6 @@ window.addEventListener('load', () => {
       sensitivity = parseInt(e.target.value);
       if (sensitivityValue) sensitivityValue.textContent = sensitivity;
     });
-  }
-
-  const stabilitySlider = document.getElementById('stability-slider');
-  const stabilityValue = document.getElementById('stability-value');
-  if (stabilitySlider) {
-    stabilityLevel = parseInt(stabilitySlider.value);
-    stabilitySlider.addEventListener('input', (e) => {
-      stabilityLevel = parseInt(e.target.value);
-      if (stabilityValue) stabilityValue.textContent = stabilityLevel;
-    });
-    if (stabilityValue) stabilityValue.textContent = stabilityLevel;
   }
 
   updateStatus(statusElements.speech, 'Ready (Ctrl+R to record)', '#a0a0a0');
