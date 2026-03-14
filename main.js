@@ -32,7 +32,18 @@ function createWindow() {
   });
 }
 
-// IPC handler for moving mouse cursor
+// IPC handler to get window position for coordinate conversion
+ipcMain.handle('get-window-bounds', async (event) => {
+  try {
+    const bounds = mainWindow.getBounds();
+    return { success: true, bounds };
+  } catch (error) {
+    console.error('Error getting window bounds:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// IPC handler for moving mouse cursor (system-wide)
 ipcMain.handle('move-cursor', async (event, { x, y }) => {
   try {
     const displays = screen.getAllDisplays();
@@ -42,6 +53,7 @@ ipcMain.handle('move-cursor', async (event, { x, y }) => {
     const clampedX = Math.max(0, Math.min(x, primaryDisplay.size.width - 1));
     const clampedY = Math.max(0, Math.min(y, primaryDisplay.size.height - 1));
     
+    // robotjs moves the ACTUAL system cursor across entire desktop
     robot.moveMouse(clampedX, clampedY);
     return { success: true };
   } catch (error) {

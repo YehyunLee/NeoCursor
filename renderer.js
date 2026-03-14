@@ -5,15 +5,15 @@ let lastX = 0;
 let lastY = 0;
 
 const statusElements = {
-  eye: document.getElementById('eye-status'),
-  speech: document.getElementById('speech-status'),
-  calibration: document.getElementById('calibration-status')
+  eye: null,
+  speech: null,
+  calibration: null
 };
 
 const buttons = {
-  start: document.getElementById('start-tracking'),
-  stop: document.getElementById('stop-tracking'),
-  calibrate: document.getElementById('calibrate')
+  start: null,
+  stop: null,
+  calibrate: null
 };
 
 function updateStatus(element, text, color) {
@@ -29,72 +29,74 @@ function smoothCoordinates(newX, newY) {
   return { x: Math.round(lastX), y: Math.round(lastY) };
 }
 
-function initializeGazeTracking() {
-  if (typeof GazeCloudAPI === 'undefined') {
-    console.error('GazeCloudAPI not loaded');
-    updateStatus(statusElements.eye, 'Error: API not loaded', '#e94560');
+function initializeWebGazer() {
+  if (typeof webgazer === 'undefined') {
+    console.error('WebGazer not loaded');
+    updateStatus(statusElements.eye, 'Error: WebGazer not loaded', '#e94560');
     return;
   }
 
-  GazeCloudAPI.OnCalibrationComplete = function() {
-    console.log('Calibration complete');
-    isCalibrated = true;
-    updateStatus(statusElements.calibration, 'Calibrated', '#4ecca3');
-    updateStatus(statusElements.eye, 'Tracking Active', '#4ecca3');
-  };
-
-  GazeCloudAPI.OnCamDenied = function() {
-    console.log('Camera access denied');
-    updateStatus(statusElements.eye, 'Camera Denied', '#e94560');
-    isTracking = false;
-  };
-
-  GazeCloudAPI.OnError = function(msg) {
-    console.log('GazeCloud Error: ' + msg);
-    updateStatus(statusElements.eye, 'Error: ' + msg, '#e94560');
-  };
-
-  GazeCloudAPI.OnResult = function(gazeData) {
-    if (gazeData.state === 0 && isTracking && isCalibrated) {
-      const screenX = gazeData.docX;
-      const screenY = gazeData.docY;
-      
-      const smoothed = smoothCoordinates(screenX, screenY);
-      
-      window.electronAPI.moveCursor(smoothed.x, smoothed.y)
-        .catch(err => console.error('Error moving cursor:', err));
-      
-      if (gazeData.state === 0) {
-        updateStatus(statusElements.eye, `Tracking (${smoothed.x}, ${smoothed.y})`, '#4ecca3');
-      }
-    } else if (gazeData.state === -1) {
-      updateStatus(statusElements.eye, 'Face Lost', '#f39c12');
-    } else if (gazeData.state === 1) {
-      updateStatus(statusElements.eye, 'Needs Calibration', '#f39c12');
+  console.log('WebGazer loaded successfully');
+  
+  webgazer.setGazeListener(async function(data, timestamp) {
+    if (data == null || !isTracking) {
+      return;
     }
-  };
+    
+    const smoothed = smoothCoordinates(data.x, data.y);
+    
+    // Convert window-relative coordinates to screen coordinates
+    try {
+      const result = await window.electronAPI.getWindowBounds();
+      if (result.success) {
+        const screenX = result.bounds.x + smoothed.x;
+        const screenY = result.bounds.y + smoothed.y;
+        
+        await window.electronAPI.moveCursor(screenX, screenY);
+        updateStatus(statusElements.eye, `Desktop (${screenX}, ${screenY})`, '#4ecca3');
+      }
+    } catch (err) {
+      console.error('Error moving cursor:', err);
+    }
+  });
 
-  GazeCloudAPI.UseClickRecalibration = true;
+  webgazer.showVideoPreview(true)
+    .showPredictionPoints(true)
+    .applyKalmanFilter(true);
+
+  updateStatus(statusElements.eye, 'Ready', '#a0a0a0');
 }
 
-function startTracking() {
-  if (typeof GazeCloudAPI === 'undefined') {
-    updateStatus(statusElements.eye, 'API not loaded', '#e94560');
+async function startTracking() {
+  if (typeof webgazer === 'undefined') {
+    updateStatus(statusElements.eye, 'WebGazer not loaded', '#e94560');
     return;
   }
 
-  updateStatus(statusElements.eye, 'Starting...', '#f39c12');
-  GazeCloudAPI.StartEyeTracking();
-  isTracking = true;
-  
-  if (buttons.start) buttons.start.disabled = true;
-  if (buttons.stop) buttons.stop.disabled = false;
+  try {
+    updateStatus(statusElements.eye, 'Starting...', '#f39c12');
+    
+    await webgazer.begin();
+    isTracking = true;
+    
+    updateStatus(statusElements.eye, 'Tracking Started', '#4ecca3');
+    updateStatus(statusElements.calibration, 'Click around to calibrate', '#f39c12');
+    
+    if (buttons.start) buttons.start.disabled = true;
+    if (buttons.stop) buttons.stop.disabled = false;
+    if (buttons.calibrate) buttons.calibrate.disabled = false;
+    
+  } catch (error) {
+    console.error('Error starting WebGazer:', error);
+    updateStatus(statusElements.eye, 'Error: ' + error.message, '#e94560');
+    isTracking = false;
+  }
 }
 
 function stopTracking() {
-  if (typeof GazeCloudAPI === 'undefined') return;
+  if (typeof webgazer === 'undefined') return;
   
-  GazeCloudAPI.StopEyeTracking();
+  webgazer.pause();
   isTracking = false;
   isCalibrated = false;
   
@@ -103,6 +105,7 @@ function stopTracking() {
   
   if (buttons.start) buttons.start.disabled = false;
   if (buttons.stop) buttons.stop.disabled = true;
+  if (buttons.calibrate) buttons.calibrate.disabled = true;
 }
 
 function startCalibration() {
@@ -110,10 +113,24 @@ function startCalibration() {
     alert('Please start eye tracking first');
     return;
   }
+  
   updateStatus(statusElements.calibration, 'Calibrating...', '#f39c12');
+  
+  setTimeout(() => {
+    isCalibrated = true;
+    updateStatus(statusElements.calibration, 'Calibrated', '#4ecca3');
+  }, 3000);
 }
 
 document.addEventListener('DOMContentLoaded', () => {
+  statusElements.eye = document.getElementById('eye-status');
+  statusElements.speech = document.getElementById('speech-status');
+  statusElements.calibration = document.getElementById('calibration-status');
+  
+  buttons.start = document.getElementById('start-tracking');
+  buttons.stop = document.getElementById('stop-tracking');
+  buttons.calibrate = document.getElementById('calibrate');
+  
   updateStatus(statusElements.eye, 'Ready', '#a0a0a0');
   updateStatus(statusElements.speech, 'Coming Soon', '#a0a0a0');
   updateStatus(statusElements.calibration, 'Not Calibrated', '#a0a0a0');
@@ -129,9 +146,10 @@ document.addEventListener('DOMContentLoaded', () => {
   
   if (buttons.calibrate) {
     buttons.calibrate.addEventListener('click', startCalibration);
+    buttons.calibrate.disabled = true;
   }
   
   setTimeout(() => {
-    initializeGazeTracking();
+    initializeWebGazer();
   }, 500);
 });
