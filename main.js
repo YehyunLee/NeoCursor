@@ -129,10 +129,12 @@ let vsrHandler = null;
 let speechHandler = null;
 let googleSpeechHandler = null;
 let activeSpeechEngine = 'whisper'; // 'whisper' or 'google'
+
+const initialGoogleKey = process.env.GOOGLE_SPEECH_API_KEY || null;
 let speechSettings = {
-  engine: 'whisper',
+  engine: initialGoogleKey ? 'google' : 'whisper',
   whisperModel: 'base',
-  googleApiKey: process.env.GOOGLE_SPEECH_API_KEY || null
+  googleApiKey: initialGoogleKey
 };
 
 function createWindow() {
