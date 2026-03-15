@@ -94,6 +94,7 @@ function startCursorHelper() {
     const psScript = `
 Add-Type -TypeDefinition @'
 using System;
+using System.Threading;
 using System.Runtime.InteropServices;
 
 public struct MOUSEINPUT {
@@ -133,6 +134,25 @@ public class WinInput {
         inp.mi.mouseData = amount;
         SendInput(1, new INPUT[]{inp}, Marshal.SizeOf(typeof(INPUT)));
     }
+
+    public static void Click(int downFlag, int upFlag) {
+        int sz = Marshal.SizeOf(typeof(INPUT));
+        var down = new INPUT(); down.type = 0; down.mi.dwFlags = downFlag;
+        SendInput(1, new INPUT[]{down}, sz);
+        System.Threading.Thread.Sleep(30);
+        var up = new INPUT(); up.type = 0; up.mi.dwFlags = upFlag;
+        SendInput(1, new INPUT[]{up}, sz);
+    }
+
+    public static void MouseDown(int flag) {
+        var inp = new INPUT(); inp.type = 0; inp.mi.dwFlags = flag;
+        SendInput(1, new INPUT[]{inp}, Marshal.SizeOf(typeof(INPUT)));
+    }
+
+    public static void MouseUp(int flag) {
+        var inp = new INPUT(); inp.type = 0; inp.mi.dwFlags = flag;
+        SendInput(1, new INPUT[]{inp}, Marshal.SizeOf(typeof(INPUT)));
+    }
 }
 '@ -ErrorAction SilentlyContinue
 
@@ -156,16 +176,16 @@ while($true){
         [WinInput]::SetCursorPos($cur.X,$cur.Y)|Out-Null
     }
     elseif($p[0]-eq'CLICK'){
-        if($p.Length-ge2-and$p[1]-eq'right'){[WinInput]::mouse_event(8,0,0,0,0);Start-Sleep -m 30;[WinInput]::mouse_event(16,0,0,0,0)}
-        else{[WinInput]::mouse_event(2,0,0,0,0);Start-Sleep -m 30;[WinInput]::mouse_event(4,0,0,0,0)}
+        if($p.Length-ge2-and$p[1]-eq'right'){[WinInput]::Click(0x0008,0x0010)}
+        else{[WinInput]::Click(0x0002,0x0004)}
     }
     elseif($p[0]-eq'MOUSEDOWN'){
-        if($p.Length-ge2-and$p[1]-eq'right'){[WinInput]::mouse_event(8,0,0,0,0)}
-        else{[WinInput]::mouse_event(2,0,0,0,0)}
+        if($p.Length-ge2-and$p[1]-eq'right'){[WinInput]::MouseDown(0x0008)}
+        else{[WinInput]::MouseDown(0x0002)}
     }
     elseif($p[0]-eq'MOUSEUP'){
-        if($p.Length-ge2-and$p[1]-eq'right'){[WinInput]::mouse_event(16,0,0,0,0)}
-        else{[WinInput]::mouse_event(4,0,0,0,0)}
+        if($p.Length-ge2-and$p[1]-eq'right'){[WinInput]::MouseUp(0x0010)}
+        else{[WinInput]::MouseUp(0x0004)}
     }
 }
 `;
@@ -484,6 +504,7 @@ ipcMain.handle('move-cursor', async (event, { x, y }) => {
 
 ipcMain.handle('mouse-click', async (event, { button = 'left' }) => {
   try {
+    console.log(`[Click] ${button}`);
     if (useNativeControl) {
       sendCursorClick(button);
     } else {
