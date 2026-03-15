@@ -49,10 +49,10 @@ const MANUAL_THRESHOLD = 20;  // pixels
 const MANUAL_PAUSE_DURATION = 1000;  // ms
 
 // Tracking box for iris mapping (relative to frame dimensions)
-const BOX_W_RATIO = 0.4;
-const BOX_H_RATIO = 0.4;
-const BOX_X_RATIO = 0.3;
-const BOX_Y_RATIO = 0.3;
+const BOX_W_RATIO = 0.6;
+const BOX_H_RATIO = 0.6;
+const BOX_X_RATIO = 0.2;
+const BOX_Y_RATIO = 0.2;
 
 // Cache screen bounds to skip IPC round-trip every frame
 let cachedBounds = null;
@@ -103,7 +103,11 @@ let leftCloseStart = null;
 let rightCloseStart = null;
 let leftHoldTriggered = false;
 let rightHoldTriggered = false;
-const HOLD_TRIGGER_MS = 1500; // Hold wink for 1.5s to trigger special actions
+let bothEyesClosed = false;
+let lastLeftCloseTime = 0;
+let lastRightCloseTime = 0;
+const HOLD_TRIGGER_MS = 1500;
+const BOTH_EYES_TOLERANCE_MS = 150; // Hold wink for 1.5s to trigger special actions
 
 // Gaze trigger state
 let gazeCircle = null;
@@ -158,13 +162,56 @@ function processBlinks(landmarks) {
     return;
   }
   
+  if (vadIsSpeaking) {
+    return;
+  }
+  
   const leftClosed = leftEar < BLINK_CLOSE_THRESHOLD;
   const leftOpen = leftEar > BLINK_OPEN_THRESHOLD;
   const rightClosed = rightEar < BLINK_CLOSE_THRESHOLD;
   const rightOpen = rightEar > BLINK_OPEN_THRESHOLD;
+  const bothClosed = leftClosed && rightClosed;
+  const bothFullyOpen = leftOpen && rightOpen;
+
+  if (leftClosed && leftEyeWasOpen) {
+    lastLeftCloseTime = now;
+  }
+  if (rightClosed && rightEyeWasOpen) {
+    lastRightCloseTime = now;
+  }
+
+  const timeSinceLeftClose = now - lastLeftCloseTime;
+  const timeSinceRightClose = now - lastRightCloseTime;
+  const bothClosedRecently = timeSinceLeftClose < BOTH_EYES_TOLERANCE_MS && timeSinceRightClose < BOTH_EYES_TOLERANCE_MS;
+
+  if (bothClosed) {
+    if (!bothEyesClosed) {
+      bothEyesClosed = true;
+      leftCloseStart = null;
+      rightCloseStart = null;
+      leftHoldTriggered = false;
+      rightHoldTriggered = false;
+    }
+    leftEyeWasOpen = false;
+    rightEyeWasOpen = false;
+    return;
+  }
+
+  if (bothEyesClosed && bothFullyOpen) {
+    bothEyesClosed = false;
+    leftEyeWasOpen = true;
+    rightEyeWasOpen = true;
+    return;
+  }
+
+  if (bothClosedRecently && (leftClosed || rightClosed)) {
+    leftEyeWasOpen = false;
+    rightEyeWasOpen = false;
+    return;
+  }
   
   // Left eye interactions
-  if (leftClosed && rightOpen) {
+  if (leftClosed && rightOpen && !bothClosedRecently) {
     if (!leftCloseStart) {
       leftCloseStart = now;
       leftHoldTriggered = false;
@@ -182,7 +229,7 @@ function processBlinks(landmarks) {
     leftEyeWasOpen = false;
   }
   
-  if (leftOpen && !leftEyeWasOpen) {
+  if (leftOpen && !leftEyeWasOpen && !bothClosedRecently) {
     const heldDuration = leftCloseStart ? now - leftCloseStart : 0;
     if (!leftHoldTriggered) {
       if (isDragging) {
@@ -210,7 +257,7 @@ function processBlinks(landmarks) {
   }
   
   // Right eye interactions
-  if (rightClosed && leftOpen) {
+  if (rightClosed && leftOpen && !bothClosedRecently) {
     if (!rightCloseStart) {
       rightCloseStart = now;
       rightHoldTriggered = false;
@@ -226,14 +273,14 @@ function processBlinks(landmarks) {
     rightEyeWasOpen = false;
   }
   
-  if (rightOpen && !rightEyeWasOpen) {
+  if (rightOpen && !rightEyeWasOpen && !bothClosedRecently) {
     rightEyeWasOpen = true;
     rightCloseStart = null;
     rightHoldTriggered = false;
   }
   
   // Right eye wink = right click (disabled while dragging)
-  if (!isDragging && rightClosed && leftOpen && !rightHoldTriggered) {
+  if (!isDragging && rightClosed && leftOpen && !rightHoldTriggered && !bothClosedRecently) {
     if (now - lastRightClickTime > CLICK_COOLDOWN) {
       window.electronAPI.mouseClick('right');
       lastRightClickTime = now;
