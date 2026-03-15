@@ -753,12 +753,20 @@ window.addEventListener('load', () => {
     });
   }
 
-  // Auto-start tracking in overlay mode
-  setTimeout(() => {
-    if (!isTracking) {
-      startTracking();
-    }
-  }, 1000);
+  // Do not auto-start tracking; wait for the user to press "Start Tracking" from the overlay or Control Panel
+  updateStatus(statusElements.eye, 'Idle — press Start Tracking', '#a0a0a0');
+  if (buttons.start) {
+    buttons.start.disabled = false;
+  }
+  if (buttons.stop) {
+    buttons.stop.disabled = true;
+  }
+  if (buttons.recenter) {
+    buttons.recenter.disabled = true;
+  }
+  if (buttons.toggleVideo) {
+    buttons.toggleVideo.disabled = true;
+  }
   
   // Load speech settings and setup engine selector
   const speechEngineSelect = document.getElementById('speech-engine-select');
