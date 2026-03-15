@@ -19,12 +19,21 @@ let isSpeechActive = false;
 let audioContext = null;
 let micStream = null;
 let audioWorkletNode = null;
+let speechProcessor = null;
+let speechSourceNode = null;
 const SPEECH_SAMPLE_RATE = 16000;
 let speechSettings = {
   engine: 'whisper',
   whisperModel: 'base',
   googleAvailable: false
 };
+const VAD_START_THRESHOLD = 0.018;
+const VAD_SILENCE_TIMEOUT_MS = 1400;
+let vadIsSpeaking = false;
+let lastVoiceDetected = 0;
+let speechEngineRunning = false;
+let speechEngineStarting = false;
+let speechEngineStopping = false;
 
 // Head tracking state
 let sensitivity = 15;
@@ -617,18 +626,9 @@ window.addEventListener('load', () => {
   gazeBars = document.getElementById('gaze-bars');
   actionFeedback = document.getElementById('action-feedback');
   
-  // Listen for text mode changes to auto-enable/disable speech
+  // Text mode events remain available for UI/telemetry if needed
   window.electronAPI.onTextModeChanged((isTextMode) => {
     console.log('[TextMode] Changed to:', isTextMode);
-    if (isTextMode && !isSpeechActive && isTracking) {
-      // Auto-enable speech when entering text input
-      startSpeech();
-      updateStatus(statusElements.speech, 'Auto-enabled (text input)', '#4ecca3');
-    } else if (!isTextMode && isSpeechActive) {
-      // Auto-disable speech when leaving text input
-      stopSpeech();
-      updateStatus(statusElements.speech, 'Auto-disabled', '#a0a0a0');
-    }
   });
 
   const sensitivitySlider = document.getElementById('sensitivity-slider');
@@ -713,6 +713,11 @@ window.addEventListener('load', () => {
   });
 
   setTimeout(initializeTracker, 500);
+  setTimeout(() => {
+    if (!isSpeechActive) {
+      startSpeech().catch((err) => console.error('[Speech] Auto-start failed:', err));
+    }
+  }, 1200);
 });
 
 // VSR Recording Functions
@@ -823,101 +828,178 @@ async function toggleSpeech() {
   }
 }
 
-async function startSpeech() {
+function updateSpeechMonitoringStatus(messageOverride) {
+  if (!statusElements.speech) return;
+  if (!isSpeechActive) {
+    updateStatus(statusElements.speech, 'Voice control off (click to enable)', '#a0a0a0');
+    return;
+  }
+  if (messageOverride) {
+    updateStatus(statusElements.speech, messageOverride.text, messageOverride.color);
+    return;
+  }
+  if (speechEngineStarting) {
+    updateStatus(statusElements.speech, 'Voice detected – starting STT…', '#f39c12');
+  } else if (speechEngineRunning) {
+    updateStatus(statusElements.speech, 'Listening (voice detected)', '#4ecca3');
+  } else {
+    updateStatus(statusElements.speech, 'Monitoring (silence)…', '#a0a0a0');
+  }
+}
+
+async function ensureSpeechEngineStarted() {
+  if (speechEngineRunning || speechEngineStarting || !isSpeechActive) return;
+  speechEngineStarting = true;
+  updateSpeechMonitoringStatus();
   try {
-    updateStatus(statusElements.speech, 'Starting microphone...', '#f39c12');
-    
-    // Request microphone access
-    micStream = await navigator.mediaDevices.getUserMedia({ 
+    const result = await window.electronAPI.speechStart('base');
+    if (result.success) {
+      speechEngineRunning = true;
+      console.log('[Speech] Engine engaged (voice detected)');
+      updateSpeechMonitoringStatus();
+    } else {
+      throw new Error(result.error || 'Failed to start speech');
+    }
+  } catch (error) {
+    console.error('[Speech] Error starting engine:', error);
+    updateStatus(statusElements.speech, `Engine error: ${error.message}`, '#e94560');
+  } finally {
+    speechEngineStarting = false;
+  }
+}
+
+async function stopSpeechEngineInternal() {
+  if ((!speechEngineRunning && !speechEngineStarting) || speechEngineStopping) return;
+  speechEngineStopping = true;
+  try {
+    await window.electronAPI.speechStop();
+  } catch (error) {
+    console.error('[Speech] Error stopping engine:', error);
+  } finally {
+    speechEngineRunning = false;
+    speechEngineStopping = false;
+    if (isSpeechActive) {
+      updateSpeechMonitoringStatus();
+    }
+  }
+}
+
+function processAudioForVAD(inputData) {
+  if (!isSpeechActive) return;
+  let energy = 0;
+  for (let i = 0; i < inputData.length; i++) {
+    const sample = inputData[i];
+    energy += sample * sample;
+  }
+  const rms = Math.sqrt(energy / inputData.length);
+  const now = Date.now();
+
+  if (rms >= VAD_START_THRESHOLD) {
+    lastVoiceDetected = now;
+    if (!vadIsSpeaking) {
+      vadIsSpeaking = true;
+      updateStatus(statusElements.speech, 'Voice detected…', '#4ecca3');
+    }
+    ensureSpeechEngineStarted();
+  }
+
+  if (speechEngineRunning) {
+    const pcmData = new Int16Array(inputData.length);
+    for (let i = 0; i < inputData.length; i++) {
+      const s = Math.max(-1, Math.min(1, inputData[i]));
+      pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
+    }
+    window.electronAPI.speechFeedAudio(pcmData.buffer).catch((err) => {
+      console.error('[Speech] Feed audio failed:', err);
+    });
+  }
+
+  if (vadIsSpeaking && now - lastVoiceDetected > VAD_SILENCE_TIMEOUT_MS) {
+    vadIsSpeaking = false;
+    updateSpeechMonitoringStatus();
+    stopSpeechEngineInternal();
+  } else if (!speechEngineRunning && !speechEngineStarting) {
+    updateSpeechMonitoringStatus();
+  }
+}
+
+async function startSpeech() {
+  if (isSpeechActive) {
+    updateSpeechMonitoringStatus();
+    return;
+  }
+  try {
+    updateStatus(statusElements.speech, 'Enabling microphone…', '#f39c12');
+
+    micStream = await navigator.mediaDevices.getUserMedia({
       audio: {
         sampleRate: SPEECH_SAMPLE_RATE,
         channelCount: 1,
         echoCancellation: true,
         noiseSuppression: true
-      } 
+      }
     });
-    
-    // Create audio context
+
     audioContext = new (window.AudioContext || window.webkitAudioContext)({
       sampleRate: SPEECH_SAMPLE_RATE
     });
-    
-    const source = audioContext.createMediaStreamSource(micStream);
-    
-    // Create ScriptProcessor for audio capture (fallback for older browsers)
-    const processor = audioContext.createScriptProcessor(4096, 1, 1);
-    
-    processor.onaudioprocess = async (e) => {
-      if (!isSpeechActive) return;
-      
-      const inputData = e.inputBuffer.getChannelData(0);
-      
-      // Convert float32 [-1, 1] to int16 PCM
-      const pcmData = new Int16Array(inputData.length);
-      for (let i = 0; i < inputData.length; i++) {
-        const s = Math.max(-1, Math.min(1, inputData[i]));
-        pcmData[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
-      }
-      
-      // Send to main process
-      await window.electronAPI.speechFeedAudio(pcmData.buffer);
+
+    speechSourceNode = audioContext.createMediaStreamSource(micStream);
+    speechProcessor = audioContext.createScriptProcessor(4096, 1, 1);
+    speechProcessor.onaudioprocess = (e) => {
+      processAudioForVAD(e.inputBuffer.getChannelData(0));
     };
-    
-    source.connect(processor);
-    processor.connect(audioContext.destination);
-    
-    // Start the speech transcriber in main process
-    const result = await window.electronAPI.speechStart('base');
-    
-    if (result.success) {
-      isSpeechActive = true;
-      updateStatus(statusElements.speech, 'Listening...', '#4ecca3');
-      console.log('[Speech] Started successfully');
-    } else {
-      throw new Error(result.error || 'Failed to start speech');
-    }
-    
+    speechSourceNode.connect(speechProcessor);
+    speechProcessor.connect(audioContext.destination);
+
+    isSpeechActive = true;
+    vadIsSpeaking = false;
+    lastVoiceDetected = 0;
+    updateSpeechMonitoringStatus();
+    console.log('[Speech] Voice monitoring enabled');
   } catch (error) {
-    console.error('[Speech] Error starting:', error);
+    console.error('[Speech] Error enabling microphone:', error);
     updateStatus(statusElements.speech, `Error: ${error.message}`, '#e94560');
-    
-    // Cleanup on error
-    if (micStream) {
-      micStream.getTracks().forEach(track => track.stop());
-      micStream = null;
-    }
-    if (audioContext) {
-      audioContext.close();
-      audioContext = null;
-    }
-    isSpeechActive = false;
+    cleanupSpeechResources();
+  }
+}
+
+function cleanupSpeechResources() {
+  if (speechProcessor) {
+    speechProcessor.disconnect();
+    speechProcessor.onaudioprocess = null;
+    speechProcessor = null;
+  }
+  if (speechSourceNode) {
+    speechSourceNode.disconnect();
+    speechSourceNode = null;
+  }
+  if (micStream) {
+    micStream.getTracks().forEach((track) => track.stop());
+    micStream = null;
+  }
+  if (audioContext) {
+    audioContext.close();
+    audioContext = null;
   }
 }
 
 async function stopSpeech() {
+  if (!isSpeechActive && !speechEngineRunning && !speechEngineStarting) {
+    updateSpeechMonitoringStatus();
+    return;
+  }
   try {
-    updateStatus(statusElements.speech, 'Stopping...', '#f39c12');
-    
-    // Stop audio capture
-    if (micStream) {
-      micStream.getTracks().forEach(track => track.stop());
-      micStream = null;
-    }
-    
-    if (audioContext) {
-      await audioContext.close();
-      audioContext = null;
-    }
-    
-    // Stop transcriber in main process
-    await window.electronAPI.speechStop();
-    
+    updateStatus(statusElements.speech, 'Disabling voice control…', '#f39c12');
+    await stopSpeechEngineInternal();
+    cleanupSpeechResources();
     isSpeechActive = false;
-    updateStatus(statusElements.speech, 'Ready (Click to start)', '#a0a0a0');
-    console.log('[Speech] Stopped');
-    
+    vadIsSpeaking = false;
+    lastVoiceDetected = 0;
+    updateSpeechMonitoringStatus();
+    console.log('[Speech] Voice monitoring disabled');
   } catch (error) {
-    console.error('[Speech] Error stopping:', error);
-    updateStatus(statusElements.speech, 'Error stopping', '#e94560');
+    console.error('[Speech] Error stopping voice control:', error);
+    updateStatus(statusElements.speech, 'Error stopping voice control', '#e94560');
   }
 }
