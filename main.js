@@ -218,8 +218,9 @@ function createWindow() {
   mainWindow.setIgnoreMouseEvents(true, { forward: true });
   
   // Ensure window stays on top even when other apps are in fullscreen
-  // Use 'floating' level which stays above fullscreen windows
-  mainWindow.setAlwaysOnTop(true, 'floating', 1);
+  // Use 'screen-saver' level so overlay appears over macOS full screen spaces
+  mainWindow.setAlwaysOnTop(true, 'screen-saver');
+  mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   
   // Additional setting to ensure visibility over fullscreen apps
   if (process.platform === 'darwin') {

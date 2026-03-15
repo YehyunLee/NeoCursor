@@ -334,6 +334,15 @@
       background: rgba(0, 255, 200, 0.1);
       border: 2px solid rgba(0, 255, 200, 0.3);
       transition: all 0.2s ease;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+      color: #04110f;
+      font-size: 0.8rem;
+      padding: 6px;
     }
 
     .gaze-bar.triggered {
@@ -346,18 +355,22 @@
       top: 0;
       left: 20%;
       right: 20%;
-      height: 60px;
+      height: 72px;
       border-bottom: 3px solid var(--accent);
       clip-path: polygon(0 0, 100% 0, calc(100% - 8px) 100%, 8px 100%);
+      align-items: flex-start;
+      padding-top: 6px;
     }
 
     .gaze-bar-bottom {
       bottom: 0;
       left: 20%;
       right: 20%;
-      height: 60px;
+      height: 72px;
       border-top: 3px solid var(--accent);
       clip-path: polygon(8px 0, calc(100% - 8px) 0, 100% 100%, 0 100%);
+      align-items: flex-end;
+      padding-bottom: 6px;
     }
 
     .gaze-bar-left {
@@ -376,6 +389,35 @@
       width: 60px;
       border-left: 3px solid var(--accent);
       clip-path: polygon(0 8px, 100% 0, 100% 100%, 0 calc(100% - 8px));
+    }
+
+    .gaze-bar span {
+      display: block;
+      background: rgba(4, 17, 15, 0.88);
+      color: var(--accent);
+      padding: 4px 12px;
+      border-radius: 999px;
+      box-shadow: 0 6px 16px rgba(0, 0, 0, 0.35);
+      letter-spacing: 0.15em;
+      font-weight: 700;
+      writing-mode: horizontal-tb;
+    }
+
+    .gaze-bar-top span {
+      transform: translateY(6px);
+    }
+
+    .gaze-bar-bottom span {
+      transform: translateY(-28px);
+    }
+
+    .gaze-bar-left span,
+    .gaze-bar-right span {
+      writing-mode: vertical-rl;
+      text-orientation: upright;
+      align-self: center;
+      padding: 14px 6px;
+      letter-spacing: 0.25em;
     }
 
     /* Gaze feedback circle */
@@ -571,10 +613,10 @@
 
   <!-- Gaze trigger bars -->
   <div id="gaze-bars">
-    <div class="gaze-bar gaze-bar-top" data-action="scroll-up"></div>
-    <div class="gaze-bar gaze-bar-bottom" data-action="scroll-down"></div>
-    <div class="gaze-bar gaze-bar-left" data-action="alt-tab-left"></div>
-    <div class="gaze-bar gaze-bar-right" data-action="alt-tab-right"></div>
+    <div class="gaze-bar gaze-bar-top" data-action="scroll-up"><span>Scroll Up</span></div>
+    <div class="gaze-bar gaze-bar-bottom" data-action="scroll-down"><span>Scroll Down</span></div>
+    <div class="gaze-bar gaze-bar-left" data-action="alt-tab-left"><span>App Back</span></div>
+    <div class="gaze-bar gaze-bar-right" data-action="alt-tab-right"><span>App Next</span></div>
   </div>
 
   <!-- Gaze feedback circle -->
