@@ -1,14 +1,14 @@
 // Very first: log that main.js was entered (before any other require that might crash)
 const path = require('path');
 const fs = require('fs');
-const STARTUP_LOG = path.join(__dirname, 'silentcursor-startup.log');
+const STARTUP_LOG = path.join(__dirname, 'neocursor-startup.log');
 try { fs.appendFileSync(STARTUP_LOG, `[${new Date().toISOString()}] main.js ENTRY\n`); } catch (_) {}
 
 require('dotenv').config();
 const logStart = (msg) => {
   const line = `[${new Date().toISOString()}] ${msg}\n`;
   try { fs.appendFileSync(STARTUP_LOG, line); } catch (_) {}
-  process.stderr.write('[SilentCursor] ' + msg + '\n');
+  process.stderr.write('[NeoCursor] ' + msg + '\n');
 };
 logStart('main.js loading...');
 const { app, BrowserWindow, ipcMain, screen, globalShortcut } = require('electron');
@@ -22,7 +22,7 @@ if (process.platform === 'win32') {
 const { spawn } = require('child_process');
 const server = require('./server');
 logStart('server required');
-const VSRHandler = require('./vsr-handler');
+// VSR DISABLED - const VSRHandler = require('./vsr-handler');
 const SpeechHandler = require('./speech-handler');
 // Defer loading google-speech-handler (pulls in @google-cloud/speech native bindings) to avoid crash on Windows at startup
 const CursorMonitor = require('./cursor-monitor');
@@ -357,7 +357,7 @@ function sendMouseUp(button) {
 
 let mainWindow;
 let controlsWindow;
-let vsrHandler = null;
+// VSR DISABLED - let vsrHandler = null;
 let speechHandler = null;
 let googleSpeechHandler = null;
 let cursorMonitor = null;
@@ -375,7 +375,7 @@ function createControlWindow() {
   controlsWindow = new BrowserWindow({
     width: 600,
     height: 800,
-    title: 'SilentCursor Control Panel',
+    title: 'NeoCursor Control Panel',
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -726,8 +726,8 @@ app.whenReady().then(() => {
   createControlWindow();
   logStart('ready. Overlay + Control Panel opened. Ctrl+Shift+H = help.');
 
-  // Initialize VSR handler
-  vsrHandler = new VSRHandler();
+  // VSR DISABLED - Initialize VSR handler
+  // vsrHandler = new VSRHandler();
   
   // Initialize Speech handlers
   speechHandler = new SpeechHandler();
@@ -822,12 +822,12 @@ app.whenReady().then(() => {
     googleSpeechHandler.onTranscriptReady = handleTranscript;
   }
   
-  // Register global shortcuts for VSR
-  globalShortcut.register('CommandOrControl+R', () => {
-    if (mainWindow) {
-      mainWindow.webContents.send('toggle-vsr-recording');
-    }
-  });
+  // VSR DISABLED - Register global shortcuts for VSR
+  // globalShortcut.register('CommandOrControl+R', () => {
+  //   if (mainWindow) {
+  //     mainWindow.webContents.send('toggle-vsr-recording');
+  //   }
+  // });
 
   app.on('activate', function () {
     if (BrowserWindow.getAllWindows().length === 0) createWindow();
@@ -846,10 +846,10 @@ app.on('will-quit', () => {
   // Unregister all shortcuts
   globalShortcut.unregisterAll();
   
-  // Cleanup VSR temp files
-  if (vsrHandler) {
-    vsrHandler.cleanup();
-  }
+  // VSR DISABLED - Cleanup VSR temp files
+  // if (vsrHandler) {
+  //   vsrHandler.cleanup();
+  // }
   
   // Cleanup speech handler
   if (speechHandler) {
@@ -857,48 +857,48 @@ app.on('will-quit', () => {
   }
 });
 
-// VSR IPC Handlers
-ipcMain.handle('vsr-start-recording', async () => {
-  try {
-    if (!vsrHandler) {
-      return { success: false, error: 'VSR handler not initialized' };
-    }
-    const started = vsrHandler.startRecording();
-    return { success: started };
-  } catch (error) {
-    console.error('Error starting VSR recording:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('vsr-add-frame', async (event, { frameData }) => {
-  try {
-    if (!vsrHandler) {
-      return { success: false, error: 'VSR handler not initialized' };
-    }
-    vsrHandler.addFrame(frameData);
-    return { success: true };
-  } catch (error) {
-    console.error('Error adding VSR frame:', error);
-    return { success: false, error: error.message };
-  }
-});
-
-ipcMain.handle('vsr-stop-recording', async () => {
-  if (!vsrHandler) return { success: false, error: 'VSR not initialized' };
-  try {
-    const result = await vsrHandler.stopRecording();
-    if (result && result.text) {
-      // Process through command processor or type as text
-      handleTranscript(result.text);
-      return { success: true, text: result.text, confidence: result.confidence };
-    }
-    return { success: false, error: 'No speech detected or recording too short' };
-  } catch (error) {
-    console.error('[VSR] Stop recording error:', error);
-    return { success: false, error: error.message };
-  }
-});
+// VSR DISABLED - VSR IPC Handlers
+// ipcMain.handle('vsr-start-recording', async () => {
+//   try {
+//     if (!vsrHandler) {
+//       return { success: false, error: 'VSR handler not initialized' };
+//     }
+//     const started = vsrHandler.startRecording();
+//     return { success: started };
+//   } catch (error) {
+//     console.error('Error starting VSR recording:', error);
+//     return { success: false, error: error.message };
+//   }
+// });
+// 
+// ipcMain.handle('vsr-add-frame', async (event, { frameData }) => {
+//   try {
+//     if (!vsrHandler) {
+//       return { success: false, error: 'VSR handler not initialized' };
+//     }
+//     vsrHandler.addFrame(frameData);
+//     return { success: true };
+//   } catch (error) {
+//     console.error('Error adding VSR frame:', error);
+//     return { success: false, error: error.message };
+//   }
+// });
+// 
+// ipcMain.handle('vsr-stop-recording', async () => {
+//   if (!vsrHandler) return { success: false, error: 'VSR not initialized' };
+//   try {
+//     const result = await vsrHandler.stopRecording();
+//     if (result && result.text) {
+//       // Process through command processor or type as text
+//       handleTranscript(result.text);
+//       return { success: true, text: result.text, confidence: result.confidence };
+//     }
+//     return { success: false, error: 'No speech detected or recording too short' };
+//   } catch (error) {
+//     console.error('[VSR] Stop recording error:', error);
+//     return { success: false, error: error.message };
+//   }
+// });
 
 ipcMain.handle('speech-start', async (event, { modelSize }) => {
   try {
