@@ -19,5 +19,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   getSpeechSettings: () => ipcRenderer.invoke('get-speech-settings'),
   updateSpeechSettings: (settings) => ipcRenderer.invoke('update-speech-settings', settings),
   typeText: (text) => ipcRenderer.invoke('type-text', { text }),
+  copySelection: () => ipcRenderer.invoke('copy-selection'),
+  pasteClipboard: () => ipcRenderer.invoke('paste-clipboard'),
   onTextModeChanged: (callback) => ipcRenderer.on('text-mode-changed', (event, isTextMode) => callback(isTextMode))
 });
