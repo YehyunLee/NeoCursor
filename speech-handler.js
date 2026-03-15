@@ -95,23 +95,26 @@ class SpeechHandler {
       console.log(`[Speech] Raw: "${msg.text}"`);
       
       // Optionally improve with LLM
-      let finalText = msg.text;
+      let llmResult = { text: msg.text, command: null };
       if (this.llmImprover && msg.text.trim().length > 0) {
         try {
           const t0 = Date.now();
-          finalText = await this.llmImprover.improveTranscript(msg.text);
-          console.log(`[Speech] LLM improved (${Date.now() - t0}ms): "${finalText}"`);
+          llmResult = await this.llmImprover.improveTranscript(msg.text);
+          console.log(`[Speech] LLM improved (${Date.now() - t0}ms): "${llmResult.text}"${llmResult.command ? ' [cmd=' + llmResult.command + ']' : ''}`);
         } catch (err) {
           console.error('[Speech] LLM improvement failed:', err);
-          finalText = msg.text + ' ';
+          llmResult = { text: msg.text, command: null };
         }
-      } else {
-        finalText = msg.text + ' ';
       }
       
-      // Trigger callback to type the text
+      const payload = {
+        text: (llmResult.text && llmResult.text.length > 0 ? llmResult.text : msg.text) + ' ',
+        commandHint: llmResult.command
+      };
+      
+      // Trigger callback to type the text / command
       if (this.onTranscriptReady) {
-        this.onTranscriptReady(finalText);
+        this.onTranscriptReady(payload);
       }
     } else if (msg.error) {
       console.error('[Speech] Transcription error:', msg.error);

@@ -60,7 +60,7 @@ class GoogleSpeechHandler {
               
               // Trigger callback to type the text
               if (this.onTranscriptReady) {
-                this.onTranscriptReady(transcript + ' ');
+                this.onTranscriptReady({ text: transcript + ' ', commandHint: null });
               }
             } else {
               console.log(`[GoogleSpeech] Interim: "${transcript}"`);
