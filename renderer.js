@@ -1003,3 +1003,6 @@ async function stopSpeech() {
     updateStatus(statusElements.speech, 'Error stopping voice control', '#e94560');
   }
 }
+
+
+

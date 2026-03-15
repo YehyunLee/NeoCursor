@@ -1,9 +1,9 @@
 const { spawn } = require('child_process');
-const { ipcMain } = require('electron');
 
 /**
  * CursorMonitor - Monitors cursor type changes to detect text input mode
- * Uses AppleScript on macOS to check if cursor is in text/I-beam mode
+ * - macOS: AppleScript checks AXRole of focused element (AXTextField, AXTextArea, AXComboBox)
+ * - Windows: PowerShell + UI Automation checks ControlType of focused element (Edit, Document, ComboBox)
  */
 class CursorMonitor {
   constructor() {
@@ -18,9 +18,8 @@ class CursorMonitor {
    */
   start(callback) {
     this.callback = callback;
-    
-    if (process.platform === 'darwin') {
-      // Check cursor type every 500ms
+
+    if (process.platform === 'darwin' || process.platform === 'win32') {
       this.checkInterval = setInterval(() => {
         this.checkCursorType();
       }, 500);
@@ -34,9 +33,25 @@ class CursorMonitor {
     }
   }
 
+  _onCheckResult(output) {
+    const isText = output.trim() === 'text';
+    if (isText !== this.isTextMode) {
+      this.isTextMode = isText;
+      if (this.callback) {
+        this.callback(isText);
+      }
+    }
+  }
+
   checkCursorType() {
-    // On macOS, we can check if the focused element is a text input
-    // by checking the accessibility role of the focused element
+    if (process.platform === 'darwin') {
+      this._checkDarwin();
+    } else if (process.platform === 'win32') {
+      this._checkWindows();
+    }
+  }
+
+  _checkDarwin() {
     const script = `
       tell application "System Events"
         try
@@ -58,20 +73,26 @@ class CursorMonitor {
 
     const proc = spawn('osascript', ['-e', script]);
     let output = '';
+    proc.stdout.on('data', (data) => { output += data.toString(); });
+    proc.on('close', () => { this._onCheckResult(output); });
+  }
 
-    proc.stdout.on('data', (data) => {
-      output += data.toString();
-    });
+  _checkWindows() {
+    // UI Automation: ControlType.Edit=50004, Document=50030, ComboBox=50003
+    const script = [
+      'Add-Type -AssemblyName UIAutomationClient',
+      'Add-Type -AssemblyName UIAutomationTypes',
+      'try {',
+      '  $el = [System.Windows.Automation.AutomationElement]::FocusedElement',
+      '  $id = [int]$el.Current.ControlType.Id',
+      '  if ($id -eq 50004 -or $id -eq 50030 -or $id -eq 50003) { Write-Output "text" } else { Write-Output "normal" }',
+      '} catch { Write-Output "normal" }'
+    ].join('; ');
 
-    proc.on('close', () => {
-      const isText = output.trim() === 'text';
-      if (isText !== this.isTextMode) {
-        this.isTextMode = isText;
-        if (this.callback) {
-          this.callback(isText);
-        }
-      }
-    });
+    const proc = spawn('powershell', ['-NoProfile', '-NonInteractive', '-Command', script]);
+    let output = '';
+    proc.stdout.on('data', (data) => { output += data.toString(); });
+    proc.on('close', () => { this._onCheckResult(output); });
   }
 }
 
