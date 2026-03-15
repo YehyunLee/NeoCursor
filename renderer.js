@@ -157,6 +157,8 @@ function calculateEAR(landmarks, idx) {
     / (2.0 * dist(landmarks[idx[0]], landmarks[idx[3]]));
 }
 
+let eyesAreBlinking = false; // Track if eyes are currently blinking
+
 function processBlinks(landmarks) {
   if (!isTracking || !landmarks || landmarks.length === 0) return;
   
@@ -198,6 +200,7 @@ function processBlinks(landmarks) {
       leftHoldTriggered = false;
       rightHoldTriggered = false;
     }
+    eyesAreBlinking = true; // Mark as blinking to disable gaze scroll
     leftEyeWasOpen = false;
     rightEyeWasOpen = false;
     return;
@@ -205,15 +208,24 @@ function processBlinks(landmarks) {
 
   if (bothEyesClosed && bothFullyOpen) {
     bothEyesClosed = false;
+    eyesAreBlinking = false; // Eyes fully open again
     leftEyeWasOpen = true;
     rightEyeWasOpen = true;
     return;
   }
 
   if (bothClosedRecently && (leftClosed || rightClosed)) {
+    eyesAreBlinking = true; // Still in blink transition
     leftEyeWasOpen = false;
     rightEyeWasOpen = false;
     return;
+  }
+  
+  // Mark single eye blinks as blinking too
+  if (leftClosed || rightClosed) {
+    eyesAreBlinking = true;
+  } else if (bothFullyOpen) {
+    eyesAreBlinking = false;
   }
   
   // Left eye interactions
@@ -389,6 +401,7 @@ function updateGazeUI(x, y, zone) {
     currentGazeZone = null;
     gazeStartTime = 0;
     gazeTriggered = false;
+    lastScrollTime = 0; // Reset scroll timer when leaving gaze zone
     document.querySelectorAll('.gaze-bar').forEach(bar => bar.classList.remove('triggered'));
   }
 }
@@ -481,9 +494,14 @@ function processLandmarks(landmarks) {
   cursorX = cursorX + ALPHA_POS * (clampedX - cursorX);
   cursorY = cursorY + ALPHA_POS * (clampedY - cursorY);
   
-  // Check for gaze zones
-  const gazeZone = detectGazeZone(cursorX, cursorY);
-  updateGazeUI(cursorX, cursorY, gazeZone);
+  // Check for gaze zones only when eyes are fully open (not blinking)
+  if (!eyesAreBlinking) {
+    const gazeZone = detectGazeZone(cursorX, cursorY);
+    updateGazeUI(cursorX, cursorY, gazeZone);
+  } else {
+    // Clear gaze UI when blinking
+    updateGazeUI(cursorX, cursorY, null);
+  }
   
   moveCursor(cursorX, cursorY);
 }

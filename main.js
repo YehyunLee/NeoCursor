@@ -356,7 +356,6 @@ function createControlWindow() {
     width: 600,
     height: 800,
     title: 'SilentCursor Control Panel',
-    alwaysOnTop: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -365,10 +364,8 @@ function createControlWindow() {
   });
 
   controlsWindow.loadFile(path.join(__dirname, 'controls.html'));
-  controlsWindow.setAlwaysOnTop(true, 'screen-saver');
+  // Don't set always-on-top so users can click other windows without hiding the panel
   controlsWindow.focus();
-  // Always open DevTools so we can see button click logs and errors
-  controlsWindow.webContents.openDevTools({ mode: 'detach' });
 
   controlsWindow.on('closed', () => {
     controlsWindow = null;
@@ -734,8 +731,25 @@ app.whenReady().then(() => {
     }
   });
   
-  const handleTranscript = (text) => {
-    console.log(`[Speech] Received transcript: "${text}"`);
+  const handleTranscript = (payload) => {
+    // Handle both string (legacy) and object (new) formats
+    const text = typeof payload === 'string' ? payload : payload.text;
+    const commandHint = typeof payload === 'object' ? payload.commandHint : null;
+    
+    console.log(`[Speech] Received transcript: "${text}"${commandHint ? ' [hint: ' + commandHint + ']' : ''}`);
+    
+    // If Gemini provided a command hint, try to map it to an action
+    if (commandHint) {
+      const result = commandProcessor.processTranscript(commandHint);
+      if (result.isCommand) {
+        console.log(`[Speech] Gemini command hint matched: "${commandHint}" -> "${result.matchedCommand}"`);
+        const success = executeKeyboardAction(result.action);
+        console.log(`[Speech] Command execution ${success ? 'succeeded' : 'failed'}`);
+        if (success) return; // Command executed, don't type text
+      } else {
+        console.log(`[Speech] Gemini command hint "${commandHint}" not recognized, falling back to text`);
+      }
+    }
     
     // Check if this is a command or regular text
     const result = commandProcessor.processTranscript(text);
