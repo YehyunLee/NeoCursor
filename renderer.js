@@ -103,6 +103,9 @@ let currentGazeZone = null;
 let gazeStartTime = 0;
 const GAZE_TRIGGER_MS = 800; // Hold gaze for 800ms to trigger
 const GAZE_BAR_THRESHOLD = 60; // pixels from edge
+let lastScrollTime = 0;
+const SCROLL_REPEAT_MS = 150; // Continuous scroll interval after initial trigger
+let gazeTriggered = false; // Track if initial trigger happened
 
 // Action feedback overlay
 let actionFeedback = null;
@@ -151,21 +154,21 @@ function processBlinks(landmarks) {
   const rightClosed = rightEar < BLINK_CLOSE_THRESHOLD;
   const rightOpen = rightEar > BLINK_OPEN_THRESHOLD;
   
-  // Double left blink detection for drag toggle
+  // Left blink detection: single blink = click, double blink = drag toggle
   if (leftClosed && rightOpen && leftEyeWasOpen) {
     leftEyeWasOpen = false;
     leftBlinkCount++;
     lastLeftBlinkTime = now;
     
     console.log(`[LeftBlink] Count: ${leftBlinkCount}, EAR: ${leftEar.toFixed(3)}`);
+  }
+  
+  if (leftOpen && !leftEyeWasOpen) {
+    leftEyeWasOpen = true;
     
-    // Visual feedback for first blink
-    if (leftBlinkCount === 1) {
-      updateStatus(statusElements.drag, 'Blink again to toggle drag', '#f39c12');
-    }
-    
-    // Check if this is second blink within window
+    // Check if this is a double blink (second blink within window)
     if (leftBlinkCount === 2) {
+      // Double blink = toggle drag
       isDragging = !isDragging;
       console.log(`[LeftBlink] Drag toggled: ${isDragging}`);
       if (isDragging) {
@@ -178,11 +181,19 @@ function processBlinks(landmarks) {
         showActionFeedback('DRAG OFF', 'drag');
       }
       leftBlinkCount = 0;
+    } else if (leftBlinkCount === 1) {
+      // First blink finished - wait to see if it's a single click or start of double blink
+      setTimeout(() => {
+        // If count is still 1, it means no second blink occurred
+        if (leftBlinkCount === 1) {
+          window.electronAPI.mouseClick('left');
+          updateStatus(statusElements.click, 'Left Click', '#4ecca3');
+          showActionFeedback('CLICK', 'click');
+          setTimeout(() => updateStatus(statusElements.click, 'Waiting...', '#a0a0a0'), 500);
+          leftBlinkCount = 0;
+        }
+      }, 400); // 400ms wait for second blink
     }
-  }
-  
-  if (leftOpen && !leftEyeWasOpen) {
-    leftEyeWasOpen = true;
   }
   
   // Reset left blink count if window expired
@@ -281,11 +292,18 @@ function updateGazeUI(x, y, zone) {
     // Check if we're holding gaze
     if (zone === currentGazeZone) {
       const gazeDuration = now - gazeStartTime;
-      if (gazeDuration >= GAZE_TRIGGER_MS) {
+      if (gazeTriggered) {
+        // Already triggered - continuous scroll for top/bottom zones
+        if ((zone === 'top' || zone === 'bottom') && now - lastScrollTime >= SCROLL_REPEAT_MS) {
+          triggerGazeAction(zone);
+          lastScrollTime = now;
+        }
+      } else if (gazeDuration >= GAZE_TRIGGER_MS) {
         gazeCircle.classList.add('filling');
         triggerGazeAction(zone);
-        currentGazeZone = null;
-        gazeStartTime = 0;
+        gazeTriggered = true;
+        lastScrollTime = now;
+        // Don't reset zone - allow continuous scrolling
       } else {
         // Partial fill based on progress
         const progress = gazeDuration / GAZE_TRIGGER_MS;
@@ -296,6 +314,7 @@ function updateGazeUI(x, y, zone) {
     } else {
       currentGazeZone = zone;
       gazeStartTime = now;
+      gazeTriggered = false;
       gazeCircle.classList.remove('filling');
     }
     
@@ -308,6 +327,7 @@ function updateGazeUI(x, y, zone) {
     gazeCircle.classList.remove('active', 'filling');
     currentGazeZone = null;
     gazeStartTime = 0;
+    gazeTriggered = false;
     document.querySelectorAll('.gaze-bar').forEach(bar => bar.classList.remove('triggered'));
   }
 }
