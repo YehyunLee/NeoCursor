@@ -168,17 +168,13 @@ function processBlinks(landmarks) {
     
     // Check if this is a double blink (second blink within window)
     if (leftBlinkCount === 2) {
-      // Double blink = toggle drag
-      isDragging = !isDragging;
-      console.log(`[LeftBlink] Drag toggled: ${isDragging}`);
-      if (isDragging) {
+      // Double blink = start drag (only if not already dragging)
+      if (!isDragging) {
+        isDragging = true;
+        console.log('[LeftBlink] Drag START');
         window.electronAPI.mouseDown('left');
-        updateStatus(statusElements.drag, 'Dragging (Double-blink to stop)', '#4ecca3');
+        updateStatus(statusElements.drag, 'Dragging (Single blink to stop)', '#4ecca3');
         showActionFeedback('DRAG ON', 'drag');
-      } else {
-        window.electronAPI.mouseUp('left');
-        updateStatus(statusElements.drag, 'Ready', '#a0a0a0');
-        showActionFeedback('DRAG OFF', 'drag');
       }
       leftBlinkCount = 0;
     } else if (leftBlinkCount === 1) {
@@ -186,10 +182,19 @@ function processBlinks(landmarks) {
       setTimeout(() => {
         // If count is still 1, it means no second blink occurred
         if (leftBlinkCount === 1) {
-          window.electronAPI.mouseClick('left');
-          updateStatus(statusElements.click, 'Left Click', '#4ecca3');
-          showActionFeedback('CLICK', 'click');
-          setTimeout(() => updateStatus(statusElements.click, 'Waiting...', '#a0a0a0'), 500);
+          if (isDragging) {
+            // Single blink while dragging = stop drag
+            isDragging = false;
+            console.log('[LeftBlink] Drag STOP');
+            window.electronAPI.mouseUp('left');
+            updateStatus(statusElements.drag, 'Ready', '#a0a0a0');
+            showActionFeedback('DRAG OFF', 'drag');
+          } else {
+            window.electronAPI.mouseClick('left');
+            updateStatus(statusElements.click, 'Left Click', '#4ecca3');
+            showActionFeedback('CLICK', 'click');
+            setTimeout(() => updateStatus(statusElements.click, 'Waiting...', '#a0a0a0'), 500);
+          }
           leftBlinkCount = 0;
         }
       }, 400); // 400ms wait for second blink
