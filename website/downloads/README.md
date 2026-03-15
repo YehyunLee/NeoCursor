@@ -1,16 +1,7 @@
 # Download assets
 
-Place built installers here so the website can link to them.
+Installers are **not** stored in this repo (they exceed GitHub’s 100 MB limit). The website links to **GitHub Releases** for downloads.
 
-**After building** (from project root):
+**Release workflow:** Build with `npm run build:win` or `npm run build:mac` from the project root, then create a Release on GitHub and attach the `.exe` and `.dmg` (or `.zip`) from `dist/`.
 
-- **Windows**  
-  Copy from `dist/`:
-  - `SilentCursor Setup 1.0.0.exe` → save as `SilentCursor-Setup-1.0.0.exe` (no spaces for URLs)
-
-- **macOS** (build on a Mac)  
-  Copy from `dist/`:
-  - `SilentCursor-1.0.0.dmg` (or the generated .dmg name)
-  - Optionally `SilentCursor-1.0.0-mac.zip`
-
-See `BUILD.md` in this folder for build commands.
+See `BUILD.md` in the parent folder for build commands.
