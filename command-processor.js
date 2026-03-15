@@ -95,6 +95,11 @@ class CommandProcessor {
     const words = cleanText.split(/\s+/).filter(w => w.length > 0);
     const uniqueWords = [...new Set(words)];
     
+    // Skip command detection if input is too long (likely a sentence, not a command)
+    if (words.length > this.maxCommandWords) {
+      return { isCommand: false, action: null, originalText: text };
+    }
+    
     // Prefer single word when everything is repeated ("enter enter")
     const repeatedCandidate = uniqueWords.length === 1 ? uniqueWords[0] : null;
     
