@@ -172,10 +172,6 @@ function processBlinks(landmarks) {
     return;
   }
   
-  if (vadIsSpeaking) {
-    return;
-  }
-  
   const leftClosed = leftEar < BLINK_CLOSE_THRESHOLD;
   const leftOpen = leftEar > BLINK_OPEN_THRESHOLD;
   const rightClosed = rightEar < BLINK_CLOSE_THRESHOLD;
