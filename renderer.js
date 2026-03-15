@@ -34,6 +34,14 @@ let lastVoiceDetected = 0;
 let speechEngineRunning = false;
 let speechEngineStarting = false;
 let speechEngineStopping = false;
+let lastClickSuppressedNotice = 0;
+const CLICK_SUPPRESS_NOTICE_COOLDOWN = 800;
+
+// Transcript box state
+let transcriptBox = null;
+let transcriptContent = null;
+let transcriptText = '';
+let transcriptBoxVisible = false;
 
 // Head tracking state
 let sensitivity = 5;
@@ -626,6 +634,37 @@ window.addEventListener('load', () => {
   gazeBars = document.getElementById('gaze-bars');
   actionFeedback = document.getElementById('action-feedback');
   
+  // Initialize transcript box elements
+  transcriptBox = document.getElementById('transcript-box');
+  transcriptContent = document.getElementById('transcript-content');
+  
+  // Wire up transcript box buttons
+  const transcriptClear = document.getElementById('transcript-clear');
+  const transcriptRephrase = document.getElementById('transcript-rephrase');
+  const transcriptSubmit = document.getElementById('transcript-submit');
+  
+  if (transcriptClear) {
+    transcriptClear.addEventListener('click', () => {
+      transcriptText = '';
+      if (transcriptContent) transcriptContent.textContent = '';
+      hideTranscriptBox();
+    });
+  }
+  
+  if (transcriptRephrase) {
+    transcriptRephrase.addEventListener('click', async () => {
+      if (!transcriptText.trim()) return;
+      await rephraseTranscript();
+    });
+  }
+  
+  if (transcriptSubmit) {
+    transcriptSubmit.addEventListener('click', async () => {
+      if (!transcriptText.trim()) return;
+      await submitTranscript();
+    });
+  }
+  
   // Text mode events remain available for UI/telemetry if needed
   window.electronAPI.onTextModeChanged((isTextMode) => {
     console.log('[TextMode] Changed to:', isTextMode);
@@ -1046,3 +1085,88 @@ async function stopSpeech() {
     updateStatus(statusElements.speech, 'Error stopping voice control', '#e94560');
   }
 }
+
+// Transcript box functions
+function showTranscriptBox(x, y) {
+  if (!transcriptBox) return;
+  
+  transcriptBox.style.left = `${x + 20}px`;
+  transcriptBox.style.top = `${y + 20}px`;
+  transcriptBox.style.display = 'block';
+  transcriptBoxVisible = true;
+}
+
+function hideTranscriptBox() {
+  if (!transcriptBox) return;
+  
+  transcriptBox.style.display = 'none';
+  transcriptBoxVisible = false;
+  transcriptText = '';
+  if (transcriptContent) transcriptContent.textContent = '';
+}
+
+function addToTranscript(text) {
+  if (!text || !text.trim()) return;
+  
+  transcriptText += text;
+  if (transcriptContent) {
+    transcriptContent.textContent = transcriptText;
+    transcriptContent.scrollTop = transcriptContent.scrollHeight;
+  }
+  
+  if (!transcriptBoxVisible) {
+    window.electronAPI.getCursorPosition().then(pos => {
+      showTranscriptBox(pos.x, pos.y);
+    }).catch(err => {
+      console.error('[Transcript] Failed to get cursor position:', err);
+      showTranscriptBox(100, 100);
+    });
+  }
+}
+
+async function rephraseTranscript() {
+  if (!transcriptText.trim()) return;
+  
+  try {
+    updateStatus(statusElements.speech, 'Rephrasing with Gemini...', '#a855f7');
+    const result = await window.electronAPI.rephraseText(transcriptText);
+    
+    if (result.success) {
+      transcriptText = result.text;
+      if (transcriptContent) {
+        transcriptContent.textContent = transcriptText;
+      }
+      updateStatus(statusElements.speech, 'Rephrased!', '#4ecca3');
+      setTimeout(() => updateSpeechMonitoringStatus(), 1000);
+    } else {
+      console.error('[Transcript] Rephrase failed:', result.error);
+      updateStatus(statusElements.speech, 'Rephrase failed', '#e94560');
+      setTimeout(() => updateSpeechMonitoringStatus(), 2000);
+    }
+  } catch (error) {
+    console.error('[Transcript] Rephrase error:', error);
+    updateStatus(statusElements.speech, 'Rephrase error', '#e94560');
+    setTimeout(() => updateSpeechMonitoringStatus(), 2000);
+  }
+}
+
+async function submitTranscript() {
+  if (!transcriptText.trim()) return;
+  
+  try {
+    await window.electronAPI.typeText(transcriptText);
+    console.log('[Transcript] Submitted:', transcriptText);
+    hideTranscriptBox();
+    updateStatus(statusElements.speech, 'Transcript submitted', '#4ecca3');
+    setTimeout(() => updateSpeechMonitoringStatus(), 1000);
+  } catch (error) {
+    console.error('[Transcript] Submit error:', error);
+    updateStatus(statusElements.speech, 'Submit error', '#e94560');
+    setTimeout(() => updateSpeechMonitoringStatus(), 2000);
+  }
+}
+
+// Listen for transcript events from main process
+window.electronAPI.onSpeechTranscript((transcript) => {
+  addToTranscript(transcript);
+});

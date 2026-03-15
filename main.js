@@ -601,24 +601,10 @@ app.whenReady().then(() => {
   });
   
   const handleTranscript = (text) => {
-    // Type the transcribed text - now handled by unified type-text handler
-    try {
-      if (useNativeControl) {
-        if (process.platform === 'darwin') {
-          const escapedText = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-          spawn('osascript', ['-e', `tell application "System Events" to keystroke "${escapedText}"`]);
-          console.log('[Speech] Typed via AppleScript:', text);
-        } else if (process.platform === 'linux') {
-          spawn('xdotool', ['type', '--', text]);
-          console.log('[Speech] Typed via xdotool:', text);
-        } else {
-          console.log('[Speech] Would type:', text);
-        }
-      } else if (robot) {
-        robot.typeString(text);
-      }
-    } catch (err) {
-      console.error('[Speech] Error typing text:', err);
+    // Send transcript to renderer for display in floating box
+    if (mainWindow && mainWindow.webContents) {
+      mainWindow.webContents.send('speech-transcript', text);
+      console.log('[Speech] Sent transcript to renderer:', text);
     }
   };
   
@@ -813,6 +799,46 @@ ipcMain.handle('update-speech-settings', async (event, { engine, whisperModel, g
     return { success: true, settings: speechSettings };
   } catch (error) {
     console.error('Error updating speech settings:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+// Get cursor position
+ipcMain.handle('get-cursor-position', async () => {
+  try {
+    if (robot) {
+      const pos = robot.getMousePos();
+      return { x: pos.x, y: pos.y };
+    }
+    return { x: 0, y: 0 };
+  } catch (error) {
+    console.error('[CursorPosition] Error:', error);
+    return { x: 0, y: 0 };
+  }
+});
+
+// Rephrase text using Gemini
+ipcMain.handle('rephrase-text', async (event, { text }) => {
+  try {
+    const geminiApiKey = process.env.GEMINI_API_KEY;
+    if (!geminiApiKey) {
+      return { success: false, error: 'GEMINI_API_KEY not configured' };
+    }
+
+    const { GoogleGenerativeAI } = require('@google/generative-ai');
+    const genAI = new GoogleGenerativeAI(geminiApiKey);
+    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+
+    const prompt = `Please rephrase and clean up the following speech-to-text transcript. Fix any grammar issues, remove filler words, and make it more concise and professional while preserving the original meaning. Only return the rephrased text without any additional commentary:\n\n${text}`;
+
+    const result = await model.generateContent(prompt);
+    const response = await result.response;
+    const rephrased = response.text().trim();
+
+    console.log('[Gemini] Rephrased:', rephrased);
+    return { success: true, text: rephrased };
+  } catch (error) {
+    console.error('[Gemini] Rephrase error:', error);
     return { success: false, error: error.message };
   }
 });

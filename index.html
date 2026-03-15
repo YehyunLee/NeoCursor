@@ -493,6 +493,108 @@
       box-shadow: 0 0 30px rgba(168, 85, 247, 0.5), inset 0 0 20px rgba(168, 85, 247, 0.1);
     }
 
+    /* Floating transcript box */
+    #transcript-box {
+      position: fixed;
+      background: rgba(10, 11, 15, 0.98);
+      border: 2px solid var(--accent);
+      border-left: 4px solid var(--accent);
+      padding: 1rem;
+      min-width: 280px;
+      max-width: 420px;
+      z-index: 10001;
+      pointer-events: auto;
+      box-shadow: 0 0 30px rgba(0, 255, 200, 0.4), 6px 6px 0 rgba(0, 0, 0, 0.6);
+      clip-path: polygon(0 0, calc(100% - 10px) 0, 100% 10px, 100% 100%, 0 100%);
+      font-family: 'Space Grotesk', sans-serif;
+    }
+
+    #transcript-content {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      line-height: 1.5;
+      margin-bottom: 0.75rem;
+      min-height: 40px;
+      max-height: 200px;
+      overflow-y: auto;
+      padding: 0.5rem;
+      background: rgba(255, 255, 255, 0.02);
+      border: 1px solid var(--border-dim);
+      border-radius: 2px;
+      word-wrap: break-word;
+    }
+
+    #transcript-content::-webkit-scrollbar {
+      width: 6px;
+    }
+
+    #transcript-content::-webkit-scrollbar-track {
+      background: rgba(255, 255, 255, 0.05);
+    }
+
+    #transcript-content::-webkit-scrollbar-thumb {
+      background: var(--accent);
+      border-radius: 3px;
+    }
+
+    #transcript-buttons {
+      display: flex;
+      gap: 0.5rem;
+      justify-content: flex-end;
+    }
+
+    .transcript-btn {
+      padding: 0.5rem 0.75rem;
+      font-size: 1rem;
+      border: 1px solid var(--border-dim);
+      background: var(--panel);
+      color: var(--text);
+      cursor: pointer;
+      transition: all 0.15s ease;
+      box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.3);
+      clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 0 100%);
+      font-family: 'Space Grotesk', sans-serif;
+      font-weight: 600;
+      min-width: 40px;
+    }
+
+    .transcript-btn:hover {
+      background: var(--panel-hover);
+      border-color: var(--accent);
+      transform: translate(-1px, -1px);
+      box-shadow: 3px 3px 0 rgba(0, 255, 200, 0.3);
+    }
+
+    #transcript-clear {
+      border-color: var(--danger);
+      color: var(--danger);
+    }
+
+    #transcript-clear:hover {
+      background: rgba(239, 68, 68, 0.1);
+      box-shadow: 3px 3px 0 rgba(239, 68, 68, 0.3);
+    }
+
+    #transcript-rephrase {
+      border-color: var(--accent-secondary);
+      color: var(--accent-secondary);
+    }
+
+    #transcript-rephrase:hover {
+      background: rgba(168, 85, 247, 0.1);
+      box-shadow: 3px 3px 0 rgba(168, 85, 247, 0.3);
+    }
+
+    #transcript-submit {
+      border-color: var(--accent);
+      color: var(--accent);
+    }
+
+    #transcript-submit:hover {
+      background: rgba(0, 255, 200, 0.1);
+      box-shadow: 3px 3px 0 rgba(0, 255, 200, 0.3);
+    }
+
     @media (max-width: 720px) {
       body {
         padding: 2rem 1.5rem;
@@ -624,6 +726,16 @@
 
   <!-- Action feedback overlay -->
   <div id="action-feedback"></div>
+
+  <!-- Floating transcript box -->
+  <div id="transcript-box" style="display: none;">
+    <div id="transcript-content"></div>
+    <div id="transcript-buttons">
+      <button id="transcript-clear" class="transcript-btn" title="Clear">✕</button>
+      <button id="transcript-rephrase" class="transcript-btn" title="Rephrase">✨</button>
+      <button id="transcript-submit" class="transcript-btn" title="Submit">✓</button>
+    </div>
+  </div>
 
   <script src="mediapipe/camera_utils.js" crossorigin="anonymous"></script>
   <script src="mediapipe/face_mesh.js" crossorigin="anonymous"></script>

@@ -21,6 +21,9 @@ contextBridge.exposeInMainWorld('electronAPI', {
   typeText: (text) => ipcRenderer.invoke('type-text', { text }),
   copySelection: () => ipcRenderer.invoke('copy-selection'),
   pasteClipboard: () => ipcRenderer.invoke('paste-clipboard'),
+  getCursorPosition: () => ipcRenderer.invoke('get-cursor-position'),
+  rephraseText: (text) => ipcRenderer.invoke('rephrase-text', { text }),
+  onSpeechTranscript: (callback) => ipcRenderer.on('speech-transcript', (event, transcript) => callback(transcript)),
   onTextModeChanged: (callback) => ipcRenderer.on('text-mode-changed', (event, isTextMode) => callback(isTextMode)),
   
   // Control Panel <-> Overlay Communication
