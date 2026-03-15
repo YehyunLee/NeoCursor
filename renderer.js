@@ -35,7 +35,7 @@ let speechEngineRunning = false;
 let speechEngineStarting = false;
 let speechEngineStopping = false;
 
-// Head tracking state
+// Head tracking state (default 15 - synced with Control Panel)
 let sensitivity = 15;
 
 // Cursor smoothing with exponential moving average
@@ -115,6 +115,10 @@ const GAZE_BAR_THRESHOLD = 60; // pixels from edge
 let lastScrollTime = 0;
 const SCROLL_REPEAT_MS = 150; // Continuous scroll interval after initial trigger
 let gazeTriggered = false; // Track if initial trigger happened
+
+// Scroll target: set by the last click so gaze-scroll targets the focused pane
+let scrollTargetX = null;
+let scrollTargetY = null;
 
 // Action feedback overlay
 let actionFeedback = null;
@@ -199,6 +203,10 @@ function processBlinks(landmarks) {
         }, 80);
       } else {
         window.electronAPI.mouseClick('left');
+        if (cursorX != null && cursorY != null) {
+          scrollTargetX = Math.round(cursorX);
+          scrollTargetY = Math.round(cursorY);
+        }
         updateStatus(statusElements.click, 'Left Click', '#4ecca3');
         showActionFeedback('CLICK', 'click');
         setTimeout(() => updateStatus(statusElements.click, 'Waiting...', '#a0a0a0'), 500);
@@ -236,6 +244,10 @@ function processBlinks(landmarks) {
   if (!isDragging && rightClosed && leftOpen && !rightHoldTriggered) {
     if (now - lastRightClickTime > CLICK_COOLDOWN) {
       window.electronAPI.mouseClick('right');
+      if (cursorX != null && cursorY != null) {
+        scrollTargetX = Math.round(cursorX);
+        scrollTargetY = Math.round(cursorY);
+      }
       lastRightClickTime = now;
       updateStatus(statusElements.click, "Right Click", "#667eea");
       setTimeout(() => {
@@ -335,15 +347,21 @@ function updateGazeUI(x, y, zone) {
 function triggerGazeAction(zone) {
   switch(zone) {
     case 'top':
-      // Scroll up
-      window.electronAPI.scroll(0, 15);
+      if (scrollTargetX != null && scrollTargetY != null) {
+        window.electronAPI.scrollAt(scrollTargetX, scrollTargetY, 0, 360);
+      } else {
+        window.electronAPI.scroll(0, 360);
+      }
       updateStatus(statusElements.scroll, 'Scrolling Up', '#4ecca3');
       showActionFeedback('SCROLL ▲', 'scroll');
       setTimeout(() => updateStatus(statusElements.scroll, 'Move to scroll', '#a0a0a0'), 500);
       break;
     case 'bottom':
-      // Scroll down
-      window.electronAPI.scroll(0, -15);
+      if (scrollTargetX != null && scrollTargetY != null) {
+        window.electronAPI.scrollAt(scrollTargetX, scrollTargetY, 0, -360);
+      } else {
+        window.electronAPI.scroll(0, -360);
+      }
       updateStatus(statusElements.scroll, 'Scrolling Down', '#4ecca3');
       showActionFeedback('SCROLL ▼', 'scroll');
       setTimeout(() => updateStatus(statusElements.scroll, 'Move to scroll', '#a0a0a0'), 500);
@@ -389,8 +407,14 @@ function processLandmarks(landmarks) {
   const boxY = fh * BOX_Y_RATIO;
   
   // Map iris position within box to screen coordinates
-  const targetX = (irisX - boxX) / boxW * cachedBounds.width;
-  const targetY = (irisY - boxY) / boxH * cachedBounds.height;
+  // Apply sensitivity: scale offset from center (sensitivity 10 = 1x, 20 = 2x movement)
+  const screenCenterX = cachedBounds.width / 2;
+  const screenCenterY = cachedBounds.height / 2;
+  const rawTargetX = (irisX - boxX) / boxW * cachedBounds.width;
+  const rawTargetY = (irisY - boxY) / boxH * cachedBounds.height;
+  const sensMult = sensitivity / 10;
+  const targetX = screenCenterX + (rawTargetX - screenCenterX) * sensMult;
+  const targetY = screenCenterY + (rawTargetY - screenCenterY) * sensMult;
   
   // Clamp to screen bounds
   const clampedX = Math.max(0, Math.min(cachedBounds.width - 1, targetX));
@@ -459,6 +483,7 @@ function moveCursor(targetX, targetY) {
 }
 
 function onResults(results) {
+  if (!isTracking) return;
   if (videoVisible && canvasCtx) {
     canvasCtx.save();
     canvasCtx.clearRect(0, 0, canvasElement.width, canvasElement.height);
@@ -545,7 +570,10 @@ async function startTracking() {
   try {
     updateStatus(statusElements.eye, 'Starting camera...', '#f39c12');
     camera = new Camera(videoElement, {
-      onFrame: async () => { await faceMesh.send({ image: videoElement }); },
+      onFrame: async () => {
+        if (!isTracking) return;
+        await faceMesh.send({ image: videoElement });
+      },
       width: CAMERA_WIDTH,
       height: CAMERA_HEIGHT
     });
@@ -554,6 +582,8 @@ async function startTracking() {
     isTracking = true;
     cursorX = null;
     cursorY = null;
+    scrollTargetX = null;
+    scrollTargetY = null;
     
     // Show camera view by default
     videoVisible = true;
@@ -577,8 +607,17 @@ async function startTracking() {
 }
 
 async function stopTracking() {
-  if (camera) camera.stop();
   isTracking = false;
+  // Stop video stream FIRST - this immediately stops new frames
+  if (videoElement && videoElement.srcObject) {
+    const stream = videoElement.srcObject;
+    if (stream.getTracks) stream.getTracks().forEach((t) => t.stop());
+    videoElement.srcObject = null;
+  }
+  if (camera) {
+    try { await camera.stop(); } catch (e) { console.warn('[Stop] Camera stop:', e); }
+    camera = null;
+  }
   updateStatus(statusElements.eye, 'Tracking Stopped', '#a0a0a0');
   if (buttons.start) buttons.start.disabled = false;
   if (buttons.stop) buttons.stop.disabled = true;
@@ -606,6 +645,10 @@ function toggleVideoPreview() {
   const container = document.getElementById('video-container');
   container.classList.toggle('visible', videoVisible);
 }
+
+// Expose for main process fallback (executeJavaScript) when IPC fails
+window.__stopTracking = stopTracking;
+window.__startTracking = startTracking;
 
 window.addEventListener('load', () => {
   statusElements.eye = document.getElementById('eye-status');
@@ -724,6 +767,12 @@ window.addEventListener('load', () => {
     switch(command) {
       case 'toggle-tracking':
         if (isTracking) stopTracking(); else startTracking();
+        break;
+      case 'stop-tracking':
+        if (isTracking) stopTracking();
+        break;
+      case 'start-tracking':
+        if (!isTracking) startTracking();
         break;
       case 'recenter':
         recenter();
