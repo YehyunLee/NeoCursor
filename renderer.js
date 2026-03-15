@@ -88,13 +88,13 @@ let lastRightClickTime = 0;
 
 // Drag state - now using double-blink toggle
 let isDragging = false;
-let lastLeftBlinkTime = 0;
-let lastRightBlinkTime = 0;
-const DOUBLE_BLINK_WINDOW = 1000; // ms window for double blink (increased to 1s for easier detection)
-let leftBlinkCount = 0;
-let rightBlinkCount = 0;
 let leftEyeWasOpen = true;
 let rightEyeWasOpen = true;
+let leftCloseStart = null;
+let rightCloseStart = null;
+let leftHoldTriggered = false;
+let rightHoldTriggered = false;
+const HOLD_TRIGGER_MS = 1500; // Hold wink for 1.5s to trigger special actions
 
 // Gaze trigger state
 let gazeCircle = null;
@@ -154,91 +154,77 @@ function processBlinks(landmarks) {
   const rightClosed = rightEar < BLINK_CLOSE_THRESHOLD;
   const rightOpen = rightEar > BLINK_OPEN_THRESHOLD;
   
-  // Left blink detection: single blink = click, double blink = drag toggle
-  if (leftClosed && rightOpen && leftEyeWasOpen) {
+  // Left eye interactions
+  if (leftClosed && rightOpen) {
+    if (!leftCloseStart) {
+      leftCloseStart = now;
+      leftHoldTriggered = false;
+    }
+    if (!leftHoldTriggered && now - leftCloseStart >= HOLD_TRIGGER_MS) {
+      if (!isDragging) {
+        isDragging = true;
+        leftHoldTriggered = true;
+        console.log('[LeftHold] Drag START');
+        window.electronAPI.mouseDown('left');
+        updateStatus(statusElements.drag, 'Dragging (Blink to stop)', '#4ecca3');
+        showActionFeedback('DRAG ON', 'drag');
+      }
+    }
     leftEyeWasOpen = false;
-    leftBlinkCount++;
-    lastLeftBlinkTime = now;
-    
-    console.log(`[LeftBlink] Count: ${leftBlinkCount}, EAR: ${leftEar.toFixed(3)}`);
   }
   
   if (leftOpen && !leftEyeWasOpen) {
+    const heldDuration = leftCloseStart ? now - leftCloseStart : 0;
+    if (!leftHoldTriggered) {
+      if (isDragging) {
+        isDragging = false;
+        console.log('[LeftBlink] Drag STOP');
+        window.electronAPI.mouseUp('left');
+        updateStatus(statusElements.drag, 'Ready', '#a0a0a0');
+        showActionFeedback('DRAG OFF', 'drag');
+        setTimeout(() => {
+          window.electronAPI.copySelection();
+          updateStatus(statusElements.click, 'Copied Selection', '#4ecca3');
+          showActionFeedback('COPY', 'click');
+          setTimeout(() => updateStatus(statusElements.click, 'Waiting...', '#a0a0a0'), 600);
+        }, 80);
+      } else {
+        window.electronAPI.mouseClick('left');
+        updateStatus(statusElements.click, 'Left Click', '#4ecca3');
+        showActionFeedback('CLICK', 'click');
+        setTimeout(() => updateStatus(statusElements.click, 'Waiting...', '#a0a0a0'), 500);
+      }
+    }
     leftEyeWasOpen = true;
-    
-    // Check if this is a double blink (second blink within window)
-    if (leftBlinkCount === 2) {
-      // Double blink = start drag (only if not already dragging)
-      if (!isDragging) {
-        isDragging = true;
-        console.log('[LeftBlink] Drag START');
-        window.electronAPI.mouseDown('left');
-        updateStatus(statusElements.drag, 'Dragging (Single blink to stop)', '#4ecca3');
-        showActionFeedback('DRAG ON', 'drag');
-      }
-      leftBlinkCount = 0;
-    } else if (leftBlinkCount === 1) {
-      // First blink finished - wait to see if it's a single click or start of double blink
-      setTimeout(() => {
-        // If count is still 1, it means no second blink occurred
-        if (leftBlinkCount === 1) {
-          if (isDragging) {
-            // Single blink while dragging = stop drag
-            isDragging = false;
-            console.log('[LeftBlink] Drag STOP');
-            window.electronAPI.mouseUp('left');
-            updateStatus(statusElements.drag, 'Ready', '#a0a0a0');
-            showActionFeedback('DRAG OFF', 'drag');
-          } else {
-            window.electronAPI.mouseClick('left');
-            updateStatus(statusElements.click, 'Left Click', '#4ecca3');
-            showActionFeedback('CLICK', 'click');
-            setTimeout(() => updateStatus(statusElements.click, 'Waiting...', '#a0a0a0'), 500);
-          }
-          leftBlinkCount = 0;
-        }
-      }, 400); // 400ms wait for second blink
+    leftCloseStart = null;
+    leftHoldTriggered = false;
+  }
+  
+  // Right eye interactions
+  if (rightClosed && leftOpen) {
+    if (!rightCloseStart) {
+      rightCloseStart = now;
+      rightHoldTriggered = false;
     }
-  }
-  
-  // Reset left blink count if window expired
-  if (leftBlinkCount > 0 && now - lastLeftBlinkTime > DOUBLE_BLINK_WINDOW) {
-    leftBlinkCount = 0;
-  }
-  
-  // Double right blink detection for paste
-  if (rightClosed && leftOpen && rightEyeWasOpen) {
-    rightEyeWasOpen = false;
-    rightBlinkCount++;
-    lastRightBlinkTime = now;
-    
-    if (rightBlinkCount === 2 && now - lastRightClickTime > CLICK_COOLDOWN) {
-      // Trigger paste command
-      if (process.platform === 'darwin') {
-        // macOS: Cmd+V
-        const { spawn } = require('child_process');
-        spawn('osascript', ['-e', 'tell application "System Events" to keystroke "v" using command down']);
-      }
+    if (!rightHoldTriggered && now - rightCloseStart >= HOLD_TRIGGER_MS && now - lastRightClickTime > CLICK_COOLDOWN) {
+      rightHoldTriggered = true;
+      window.electronAPI.pasteClipboard();
       updateStatus(statusElements.click, 'Paste', '#a855f7');
+      showActionFeedback('PASTE', 'click');
       lastRightClickTime = now;
-      rightBlinkCount = 0;
-      setTimeout(() => {
-        updateStatus(statusElements.click, 'Waiting...', '#a0a0a0');
-      }, 500);
+      setTimeout(() => updateStatus(statusElements.click, 'Waiting...', '#a0a0a0'), 500);
     }
+    rightEyeWasOpen = false;
   }
   
   if (rightOpen && !rightEyeWasOpen) {
     rightEyeWasOpen = true;
-  }
-  
-  // Reset right blink count if window expired
-  if (rightBlinkCount > 0 && now - lastRightBlinkTime > DOUBLE_BLINK_WINDOW) {
-    rightBlinkCount = 0;
+    rightCloseStart = null;
+    rightHoldTriggered = false;
   }
   
   // Right eye wink = right click (disabled while dragging)
-  if (!isDragging && rightClosed && leftOpen) {
+  if (!isDragging && rightClosed && leftOpen && !rightHoldTriggered) {
     if (now - lastRightClickTime > CLICK_COOLDOWN) {
       window.electronAPI.mouseClick('right');
       lastRightClickTime = now;

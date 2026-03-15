@@ -27,6 +27,34 @@ try {
 // Persistent helper process for fast cursor control without robotjs
 let cursorHelper = null;
 
+function triggerSystemShortcut(action) {
+  const key = action === 'paste' ? 'v' : 'c';
+  const macScript = `tell application "System Events" to keystroke "${key}" using command down`;
+  try {
+    if (!useNativeControl && robot) {
+      const modifier = process.platform === 'darwin' ? 'command' : 'control';
+      robot.keyTap(key, modifier);
+      return true;
+    }
+
+    if (process.platform === 'darwin') {
+      spawn('osascript', ['-e', macScript]);
+      return true;
+    }
+
+    if (process.platform === 'linux') {
+      spawn('xdotool', ['key', `ctrl+${key}`]);
+      return true;
+    }
+
+    console.warn(`[Shortcut] No implementation for ${action} on platform ${process.platform}`);
+    return false;
+  } catch (error) {
+    console.error(`[Shortcut] Failed to ${action}:`, error);
+    return false;
+  }
+}
+
 function startCursorHelper() {
   // On macOS, always start the Python helper for scrolling (robotjs scroll doesn't work well)
   // On other platforms, only start if useNativeControl is true
@@ -252,6 +280,26 @@ ipcMain.handle('get-screen-bounds', async () => {
     return { success: true, bounds: primaryDisplay.bounds };
   } catch (error) {
     console.error('Error getting screen bounds:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('copy-selection', async () => {
+  try {
+    const success = triggerSystemShortcut('copy');
+    return { success };
+  } catch (error) {
+    console.error('[Shortcut] Copy failed:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('paste-clipboard', async () => {
+  try {
+    const success = triggerSystemShortcut('paste');
+    return { success };
+  } catch (error) {
+    console.error('[Shortcut] Paste failed:', error);
     return { success: false, error: error.message };
   }
 });
