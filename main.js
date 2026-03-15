@@ -376,6 +376,7 @@ function createControlWindow() {
     width: 600,
     height: 800,
     title: 'NeoCursor Control Panel',
+    icon: path.join(__dirname, 'assets/icon.svg'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -410,6 +411,7 @@ function createWindow() {
     visibleOnAllWorkspaces: true,
     fullscreenable: false,
     kiosk: false,
+    icon: path.join(__dirname, 'assets/icon.svg'),
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,

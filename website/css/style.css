@@ -53,6 +53,12 @@ body {
 .logo-bracket { color: var(--accent); }
 .logo-name { color: var(--white); }
 
+.logo-img {
+  display: block;
+  width: 160px;
+  height: auto;
+}
+
 .nav {
   display: flex;
   gap: 1.5rem;

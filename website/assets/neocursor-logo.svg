@@ -1,0 +1,33 @@
+<svg width="400" height="100" viewBox="0 0 400 100" fill="none" xmlns="http://www.w3.org/2000/svg">
+  <defs>
+    <linearGradient id="brand-gradient" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" stop-color="#22c55e" />
+      <stop offset="100%" stop-color="#10b981" />
+    </linearGradient>
+    <filter id="glow" x="-20%" y="-20%" width="140%" height="140%">
+      <feGaussianBlur stdDeviation="3" result="blur" />
+      <feComposite in="SourceGraphic" in2="blur" operator="over" />
+    </filter>
+  </defs>
+
+  <g transform="translate(10, 10)">
+    <circle cx="40" cy="40" r="38" stroke="url(#brand-gradient)" stroke-width="2" stroke-dasharray="120 40" opacity="0.4" />
+    <circle cx="40" cy="40" r="25" stroke="url(#brand-gradient)" stroke-width="4" filter="url(#glow)" />
+    <path d="M40 25 L45 45 L40 40 L35 45 Z" fill="url(#brand-gradient)" filter="url(#glow)">
+      <animateTransform
+        attributeName="transform"
+        type="translate"
+        values="0 0; 2 2; 0 0"
+        dur="3s"
+        repeatCount="indefinite" />
+    </path>
+    <circle cx="65" cy="20" r="3" fill="#22c55e" opacity="0.6" />
+    <circle cx="70" cy="50" r="2" fill="#22c55e" opacity="0.3" />
+  </g>
+
+  <g transform="translate(100, 30)">
+    <text x="0" y="35" fill="#fafafa" font-family="'Space Grotesk', sans-serif" font-weight="700" font-size="44" letter-spacing="-0.02em">
+      Neo<tspan fill="#22c55e">Cursor</tspan>
+    </text>
+  </g>
+</svg>

@@ -29,7 +29,7 @@
     "directories": { "output": "dist" },
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
-      "icon": null
+      "icon": "assets/icon.svg"
     },
     "nsis": {
       "oneClick": false,
@@ -38,7 +38,7 @@
     "mac": {
       "category": "public.app-category.utilities",
       "target": ["dmg", "zip"],
-      "icon": null,
+      "icon": "assets/icon.svg",
       "extendInfo": {
         "NSCameraUsageDescription": "NeoCursor needs camera access for head and eye tracking to control your cursor",
         "NSCameraUseContinuityCameraDeviceType": true
