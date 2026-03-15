@@ -1,0 +1,222 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>SilentCursor Control Panel</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <style>
+    :root {
+      --bg: #0a0b0f;
+      --bg-secondary: #12141a;
+      --panel: rgba(255, 255, 255, 0.03);
+      --panel-hover: rgba(255, 255, 255, 0.05);
+      --accent: #00ffc8;
+      --accent-dim: #5be7c4;
+      --accent-secondary: #a855f7;
+      --text: #ffffff;
+      --text-secondary: #e4e7ec;
+      --muted: #6b7280;
+      --danger: #ef4444;
+      --border: rgba(0, 255, 200, 0.15);
+      --border-dim: rgba(255, 255, 255, 0.08);
+    }
+
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+
+    body {
+      font-family: 'Space Grotesk', sans-serif;
+      background: var(--bg);
+      color: var(--text);
+      padding: 2rem;
+      height: 100vh;
+      overflow-y: auto;
+    }
+
+    h1 {
+      font-size: 1.5rem;
+      text-transform: uppercase;
+      margin-bottom: 0.5rem;
+    }
+
+    h2 {
+      font-size: 1.1rem;
+      color: var(--accent);
+      margin-bottom: 1rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+    }
+
+    .section {
+      background: var(--bg-secondary);
+      border: 1px solid var(--border-dim);
+      padding: 1.5rem;
+      margin-bottom: 1.5rem;
+      border-radius: 8px;
+    }
+
+    .control-group {
+      margin-bottom: 1rem;
+    }
+
+    label {
+      display: block;
+      margin-bottom: 0.5rem;
+      color: var(--muted);
+      font-size: 0.9rem;
+    }
+
+    input[type="range"] {
+      width: 100%;
+      accent-color: var(--accent);
+    }
+
+    select {
+      width: 100%;
+      padding: 0.5rem;
+      background: var(--bg);
+      border: 1px solid var(--border-dim);
+      color: var(--text);
+      border-radius: 4px;
+    }
+
+    button {
+      padding: 0.75rem 1.5rem;
+      border: 1px solid var(--accent);
+      background: var(--accent);
+      color: var(--bg);
+      font-weight: 600;
+      cursor: pointer;
+      text-transform: uppercase;
+      width: 100%;
+      margin-bottom: 0.5rem;
+      transition: all 0.2s;
+    }
+
+    button:hover {
+      opacity: 0.9;
+      transform: translateY(-1px);
+    }
+
+    button.secondary {
+      background: transparent;
+      color: var(--accent);
+    }
+
+    button.danger {
+      background: var(--danger);
+      border-color: var(--danger);
+      color: white;
+    }
+
+    .help-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    .help-item {
+      background: rgba(255, 255, 255, 0.03);
+      padding: 1rem;
+      border-left: 2px solid var(--accent);
+    }
+
+    .help-item h3 {
+      font-size: 0.9rem;
+      color: var(--accent-secondary);
+      margin-bottom: 0.5rem;
+    }
+
+    .help-item p {
+      font-size: 0.85rem;
+      color: var(--text-secondary);
+      line-height: 1.4;
+    }
+
+    .status-bar {
+      position: fixed;
+      bottom: 0;
+      left: 0;
+      right: 0;
+      background: var(--bg-secondary);
+      border-top: 1px solid var(--border-dim);
+      padding: 0.75rem 2rem;
+      display: flex;
+      justify-content: space-between;
+      font-size: 0.85rem;
+      color: var(--muted);
+    }
+
+    #connection-status {
+      color: var(--accent);
+    }
+  </style>
+</head>
+<body>
+  <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem;">
+    <div>
+      <h1>Silent Cursor</h1>
+      <p style="color: var(--muted)">Control Panel</p>
+    </div>
+    <div id="connection-status">Connected to Overlay</div>
+  </div>
+
+  <div class="section">
+    <h2>Actions & Tracking</h2>
+    <button id="btn-toggle-tracking">Stop Tracking</button>
+    <button id="btn-recenter" class="secondary">Recenter Cursor</button>
+    <button id="btn-toggle-video" class="secondary">Toggle Camera Preview</button>
+    <button id="btn-toggle-speech" class="secondary">Toggle Voice Control</button>
+  </div>
+
+  <div class="section">
+    <h2>Settings</h2>
+    <div class="control-group">
+      <label>Cursor Sensitivity: <span id="val-sensitivity">15</span></label>
+      <input type="range" id="inp-sensitivity" min="1" max="50" value="15">
+    </div>
+    <div class="control-group">
+      <label>Speech Engine</label>
+      <select id="sel-speech-engine">
+        <option value="whisper">Faster-Whisper (Offline)</option>
+        <option value="google">Google Speech-to-Text v2</option>
+      </select>
+    </div>
+  </div>
+
+  <div class="section">
+    <h2>Gesture Guide</h2>
+    <div class="help-grid">
+      <div class="help-item">
+        <h3>Left Blink</h3>
+        <p>Single blink to <strong>Left Click</strong>.</p>
+      </div>
+      <div class="help-item">
+        <h3>Right Blink</h3>
+        <p>Single blink to <strong>Right Click</strong>.</p>
+      </div>
+      <div class="help-item">
+        <h3>Drag & Drop</h3>
+        <p><strong>Hold Left Blink</strong> (1.5s) to start dragging. Blink left again to drop.</p>
+        <p style="margin-top:0.5rem; font-size:0.75rem; opacity:0.7">Auto-copies selection on drop.</p>
+      </div>
+      <div class="help-item">
+        <h3>Paste</h3>
+        <p><strong>Hold Right Blink</strong> (1.5s) to paste clipboard content.</p>
+      </div>
+      <div class="help-item">
+        <h3>Scrolling</h3>
+        <p>Stare at <strong>Top/Bottom</strong> bars to scroll up/down.</p>
+      </div>
+      <div class="help-item">
+        <h3>App Switching</h3>
+        <p>Stare at <strong>Left/Right</strong> bars to Alt-Tab.</p>
+      </div>
+    </div>
+  </div>
+
+  <script src="controls-renderer.js"></script>
+</body>
+</html>

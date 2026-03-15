@@ -203,6 +203,7 @@ function sendMouseUp(button) {
 }
 
 let mainWindow;
+let controlsWindow;
 let vsrHandler = null;
 let speechHandler = null;
 let googleSpeechHandler = null;
@@ -215,6 +216,29 @@ let speechSettings = {
   whisperModel: 'base',
   googleApiKey: initialGoogleKey
 };
+
+function createControlWindow() {
+  controlsWindow = new BrowserWindow({
+    width: 600,
+    height: 800,
+    title: 'SilentCursor Control Panel',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+
+  controlsWindow.loadFile('controls.html');
+  // Open DevTools in development
+  if (process.env.NODE_ENV === 'development') {
+    controlsWindow.webContents.openDevTools();
+  }
+
+  controlsWindow.on('closed', () => {
+    controlsWindow = null;
+  });
+}
 
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().bounds;
@@ -262,6 +286,10 @@ function createWindow() {
   if (process.env.NODE_ENV === 'development') {
     mainWindow.webContents.openDevTools();
   }
+  
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
 
   // Handle camera permission requests
   mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
@@ -272,6 +300,27 @@ function createWindow() {
     }
   });
 }
+
+// IPC for Control Panel <-> Overlay communication
+ipcMain.on('control-command', (event, { command, value }) => {
+  // Forward command to overlay window
+  if (mainWindow && mainWindow.webContents) {
+    mainWindow.webContents.send('control-command', { command, value });
+  }
+});
+
+ipcMain.on('request-overlay-status', (event) => {
+  if (mainWindow && mainWindow.webContents) {
+    mainWindow.webContents.send('control-command', { command: 'get-status' });
+  }
+});
+
+ipcMain.on('overlay-status-update', (event, status) => {
+  // Forward status to control window
+  if (controlsWindow && controlsWindow.webContents) {
+    controlsWindow.webContents.send('overlay-status-update', status);
+  }
+});
 
 // IPC handler to get screen bounds for absolute positioning
 ipcMain.handle('get-screen-bounds', async () => {
@@ -500,6 +549,7 @@ ipcMain.handle('alt-tab', async (event, { direction }) => {
 app.whenReady().then(() => {
   startCursorHelper();
   createWindow();
+  createControlWindow();
   
   // Initialize VSR handler
   vsrHandler = new VSRHandler();
