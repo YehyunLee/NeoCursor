@@ -4,23 +4,20 @@ const path = require('path');
 const LLMImprover = require('./llm-improver');
 
 class SpeechHandler {
-  constructor() {
+  constructor(llmProvider = 'gemini', llmApiKey = null) {
     this.isActive = false;
     this.transcriptionProcess = null;
     this.modelReady = false;
     this.stdoutBuffer = '';
-    this.llmImprover = null;
-    
-    // Initialize LLM improver with API key from environment
-    const apiKey = process.env.GEMINI_API_KEY || null;
-    if (apiKey) {
-      this.llmImprover = new LLMImprover(apiKey);
-    } else {
-      console.log('[Speech] No GEMINI_API_KEY found. Transcripts will not be improved.');
-    }
-    
-    // Callback for when transcripts are ready to type
     this.onTranscriptReady = null;
+    
+    // Initialize LLM improver with provided settings
+    if (llmApiKey && llmProvider !== 'none') {
+      this.llmImprover = new LLMImprover(llmApiKey, llmProvider);
+      console.log(`[Speech] LLM improver initialized with provider: ${llmProvider}`);
+    } else {
+      console.log('[Speech] No LLM API key configured. Transcripts will not be improved.');
+    }
   }
 
   start(modelSize = 'base') {

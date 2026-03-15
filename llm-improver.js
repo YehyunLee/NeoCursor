@@ -1,9 +1,18 @@
 const https = require('https');
 
 class LLMImprover {
-  constructor(apiKey) {
+  constructor(apiKey, provider = 'gemini') {
     this.apiKey = apiKey;
-    this.model = 'gemini-2.5-flash';
+    this.provider = provider;
+    
+    // Configure based on provider
+    if (provider === 'bitdeer') {
+      this.model = 'deepseek-chat';  // Bitdeer AI uses DeepSeek models
+      this.baseUrl = 'https://api.bitdeer.ai/v1';
+    } else {
+      this.model = 'gemini-2.0-flash-exp';
+      this.baseUrl = 'https://generativelanguage.googleapis.com/v1beta';
+    }
   }
 
   async improveTranscript(rawText) {
@@ -29,17 +38,32 @@ Return STRICT JSON with this shape (no explanations):
 
 Input Text: ${rawText}`;
 
-      const requestBody = JSON.stringify({
-        contents: [{
-          parts: [{ text: prompt }]
-        }],
-        generationConfig: {
+      let requestBody;
+      if (this.provider === 'bitdeer') {
+        // Bitdeer AI uses OpenAI-compatible format
+        requestBody = JSON.stringify({
+          model: this.model,
+          messages: [{
+            role: 'user',
+            content: prompt
+          }],
           temperature: 0.2,
-          topP: 0.95,
-          topK: 40,
-          maxOutputTokens: 256
-        }
-      });
+          max_tokens: 256
+        });
+      } else {
+        // Gemini format
+        requestBody = JSON.stringify({
+          contents: [{
+            parts: [{ text: prompt }]
+          }],
+          generationConfig: {
+            temperature: 0.2,
+            topP: 0.95,
+            topK: 40,
+            maxOutputTokens: 256
+          }
+        });
+      }
 
       const result = await this._makeRequest(requestBody);
       
@@ -53,12 +77,23 @@ Input Text: ${rawText}`;
         return fallback;
       }
 
-      if (!result.candidates || result.candidates.length === 0) {
-        console.log('[LLM] No candidates in response:', JSON.stringify(result));
-        return fallback;
+      let rawResponse;
+      if (this.provider === 'bitdeer') {
+        // Bitdeer AI response format
+        if (!result.choices || result.choices.length === 0) {
+          console.log('[LLM] No choices in response:', JSON.stringify(result));
+          return fallback;
+        }
+        rawResponse = result.choices[0].message.content.trim();
+      } else {
+        // Gemini response format
+        if (!result.candidates || result.candidates.length === 0) {
+          console.log('[LLM] No candidates in response:', JSON.stringify(result));
+          return fallback;
+        }
+        rawResponse = result.candidates[0].content.parts[0].text.trim();
       }
-
-      const rawResponse = result.candidates[0].content.parts[0].text.trim();
+      
       const parsed = this._parseJsonResponse(rawResponse, fallback);
 
       if (parsed.text && parsed.text.length > 0) {
@@ -117,17 +152,30 @@ Input Text: ${rawText}`;
 
   _makeRequest(body) {
     return new Promise((resolve, reject) => {
-      const url = `https://generativelanguage.googleapis.com/v1beta/models/${this.model}:generateContent?key=${this.apiKey}`;
+      let url, headers;
+      
+      if (this.provider === 'bitdeer') {
+        url = `${this.baseUrl}/chat/completions`;
+        headers = {
+          'Content-Type': 'application/json',
+          'Authorization': `Bearer ${this.apiKey}`,
+          'Content-Length': Buffer.byteLength(body)
+        };
+      } else {
+        url = `${this.baseUrl}/models/${this.model}:generateContent?key=${this.apiKey}`;
+        headers = {
+          'Content-Type': 'application/json',
+          'Content-Length': Buffer.byteLength(body)
+        };
+      }
+      
       const urlObj = new URL(url);
 
       const options = {
         hostname: urlObj.hostname,
         path: urlObj.pathname + urlObj.search,
         method: 'POST',
-        headers: {
-          'Content-Type': 'application/json',
-          'Content-Length': Buffer.byteLength(body)
-        }
+        headers: headers
       };
 
       const req = https.request(options, (res) => {

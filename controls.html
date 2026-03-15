@@ -80,7 +80,7 @@
 <body>
   <div style="display: flex; justify-content: space-between; align-items: flex-start; margin-bottom: 2rem;">
     <div style="display: flex; align-items: center; gap: 1rem;">
-      <img src="assets/neocursor-logo.svg" alt="NeoCursor" style="height: 40px; width: auto;">
+      <img src="website/assets/Logo.png" alt="NeoCursor" style="height: 40px; width: auto;">
       <div style="border-left: 1px solid var(--border-dim); padding-left: 1rem;">
         <p style="color: var(--muted); font-size: 0.8rem; text-transform: uppercase; letter-spacing: 0.1em; margin-top: 4px;">Control Panel</p>
       </div>
@@ -115,8 +115,28 @@
     <div class="control-group" id="google-api-key-group" style="margin-top: 1rem;">
       <label>Google Speech API Key <span style="font-size: 0.75rem; opacity: 0.6;">(required for Google Speech)</span></label>
       <input type="password" id="inp-google-api-key" placeholder="Enter your Google Cloud API key" style="width: 100%; padding: 0.5rem; background: var(--bg); border: 1px solid var(--border-dim); color: var(--text); border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">
-      <button id="btn-save-api-key" class="secondary" style="margin-top: 0.5rem; width: auto; padding: 0.5rem 1rem;">Save API Key</button>
-      <p id="api-key-status" style="font-size: 0.75rem; margin-top: 0.5rem; color: var(--muted);"></p>
+      <button id="btn-save-google-api-key" class="secondary" style="margin-top: 0.5rem; width: auto; padding: 0.5rem 1rem;">Save API Key</button>
+      <p id="google-api-key-status" style="font-size: 0.75rem; margin-top: 0.5rem; color: var(--muted);"></p>
+    </div>
+    <div class="control-group" style="margin-top: 1.5rem;">
+      <label>LLM Provider <span style="font-size: 0.75rem; opacity: 0.6;">(for transcript improvement & command detection)</span></label>
+      <select id="sel-llm-provider" style="width: 100%; padding: 0.5rem; background: var(--bg); border: 1px solid var(--border-dim); color: var(--text); border-radius: 4px; font-size: 0.85rem;">
+        <option value="gemini">Google Gemini</option>
+        <option value="bitdeer">Bitdeer AI</option>
+        <option value="none">None (No LLM)</option>
+      </select>
+    </div>
+    <div class="control-group" id="gemini-api-key-group" style="margin-top: 1rem;">
+      <label>Gemini API Key <span style="font-size: 0.75rem; opacity: 0.6;">(required for Gemini)</span></label>
+      <input type="password" id="inp-gemini-api-key" placeholder="Enter your Gemini API key" style="width: 100%; padding: 0.5rem; background: var(--bg); border: 1px solid var(--border-dim); color: var(--text); border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">
+      <button id="btn-save-gemini-api-key" class="secondary" style="margin-top: 0.5rem; width: auto; padding: 0.5rem 1rem;">Save Gemini Key</button>
+      <p id="gemini-api-key-status" style="font-size: 0.75rem; margin-top: 0.5rem; color: var(--muted);"></p>
+    </div>
+    <div class="control-group" id="bitdeer-api-key-group" style="margin-top: 1rem; display: none;">
+      <label>Bitdeer AI API Key <span style="font-size: 0.75rem; opacity: 0.6;">(required for Bitdeer AI)</span></label>
+      <input type="password" id="inp-bitdeer-api-key" placeholder="Enter your Bitdeer AI API key" style="width: 100%; padding: 0.5rem; background: var(--bg); border: 1px solid var(--border-dim); color: var(--text); border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">
+      <button id="btn-save-bitdeer-api-key" class="secondary" style="margin-top: 0.5rem; width: auto; padding: 0.5rem 1rem;">Save Bitdeer Key</button>
+      <p id="bitdeer-api-key-status" style="font-size: 0.75rem; margin-top: 0.5rem; color: var(--muted);"></p>
     </div>
   </div>
 
@@ -272,54 +292,177 @@
       }).catch(function() {});
     }
 
-    // --- Google API Key Management ---
-    var inpApiKey = document.getElementById('inp-google-api-key');
-    var btnSaveApiKey = document.getElementById('btn-save-api-key');
-    var apiKeyStatus = document.getElementById('api-key-status');
+    // --- API Key Management ---
+    var inpGoogleApiKey = document.getElementById('inp-google-api-key');
+    var btnSaveGoogleApiKey = document.getElementById('btn-save-google-api-key');
+    var googleApiKeyStatus = document.getElementById('google-api-key-status');
+    
+    var inpGeminiApiKey = document.getElementById('inp-gemini-api-key');
+    var btnSaveGeminiApiKey = document.getElementById('btn-save-gemini-api-key');
+    var geminiApiKeyStatus = document.getElementById('gemini-api-key-status');
+    
+    var inpBitdeerApiKey = document.getElementById('inp-bitdeer-api-key');
+    var btnSaveBitdeerApiKey = document.getElementById('btn-save-bitdeer-api-key');
+    var bitdeerApiKeyStatus = document.getElementById('bitdeer-api-key-status');
+    
+    var selLlmProvider = document.getElementById('sel-llm-provider');
+    var geminiApiKeyGroup = document.getElementById('gemini-api-key-group');
+    var bitdeerApiKeyGroup = document.getElementById('bitdeer-api-key-group');
 
-    // Load saved API key on startup
+    // Load saved settings on startup
     if (api.getSpeechSettings) {
       api.getSpeechSettings().then(function(res) {
-        if (res && res.success && res.settings.googleApiKey) {
-          if (inpApiKey) inpApiKey.value = res.settings.googleApiKey;
-          if (apiKeyStatus) {
-            apiKeyStatus.textContent = '✓ API key configured';
-            apiKeyStatus.style.color = 'var(--accent)';
+        if (res && res.success) {
+          // Google Speech API Key
+          if (res.settings.googleApiKey && inpGoogleApiKey) {
+            inpGoogleApiKey.value = res.settings.googleApiKey;
+            if (googleApiKeyStatus) {
+              googleApiKeyStatus.textContent = '✓ API key configured';
+              googleApiKeyStatus.style.color = 'var(--accent)';
+            }
+          }
+          // LLM Provider
+          if (res.settings.llmProvider && selLlmProvider) {
+            selLlmProvider.value = res.settings.llmProvider;
+            updateLlmProviderUI(res.settings.llmProvider);
+          }
+          // Gemini API Key
+          if (res.settings.geminiApiKey && inpGeminiApiKey) {
+            inpGeminiApiKey.value = res.settings.geminiApiKey;
+            if (geminiApiKeyStatus) {
+              geminiApiKeyStatus.textContent = '✓ API key configured';
+              geminiApiKeyStatus.style.color = 'var(--accent)';
+            }
+          }
+          // Bitdeer API Key
+          if (res.settings.bitdeerApiKey && inpBitdeerApiKey) {
+            inpBitdeerApiKey.value = res.settings.bitdeerApiKey;
+            if (bitdeerApiKeyStatus) {
+              bitdeerApiKeyStatus.textContent = '✓ API key configured';
+              bitdeerApiKeyStatus.style.color = 'var(--accent)';
+            }
           }
         }
       }).catch(function() {});
     }
 
-    // Save API key
-    if (btnSaveApiKey) {
-      btnSaveApiKey.addEventListener('click', function() {
-        var key = inpApiKey ? inpApiKey.value.trim() : '';
+    // LLM Provider UI update
+    function updateLlmProviderUI(provider) {
+      if (provider === 'gemini') {
+        if (geminiApiKeyGroup) geminiApiKeyGroup.style.display = 'block';
+        if (bitdeerApiKeyGroup) bitdeerApiKeyGroup.style.display = 'none';
+      } else if (provider === 'bitdeer') {
+        if (geminiApiKeyGroup) geminiApiKeyGroup.style.display = 'none';
+        if (bitdeerApiKeyGroup) bitdeerApiKeyGroup.style.display = 'block';
+      } else {
+        if (geminiApiKeyGroup) geminiApiKeyGroup.style.display = 'none';
+        if (bitdeerApiKeyGroup) bitdeerApiKeyGroup.style.display = 'none';
+      }
+    }
+
+    // LLM Provider selection
+    if (selLlmProvider) {
+      selLlmProvider.addEventListener('change', function() {
+        var provider = this.value;
+        updateLlmProviderUI(provider);
+        api.updateSpeechSettings({ llmProvider: provider });
+      });
+    }
+
+    // Save Google Speech API key
+    if (btnSaveGoogleApiKey) {
+      btnSaveGoogleApiKey.addEventListener('click', function() {
+        var key = inpGoogleApiKey ? inpGoogleApiKey.value.trim() : '';
         if (!key) {
-          if (apiKeyStatus) {
-            apiKeyStatus.textContent = '⚠ Please enter a valid API key';
-            apiKeyStatus.style.color = 'var(--danger)';
+          if (googleApiKeyStatus) {
+            googleApiKeyStatus.textContent = '⚠ Please enter a valid API key';
+            googleApiKeyStatus.style.color = 'var(--danger)';
           }
           return;
         }
-
-        // Save via IPC
         api.updateSpeechSettings({ googleApiKey: key }).then(function(res) {
           if (res && res.success) {
-            if (apiKeyStatus) {
-              apiKeyStatus.textContent = '✓ API key saved successfully';
-              apiKeyStatus.style.color = 'var(--accent)';
+            if (googleApiKeyStatus) {
+              googleApiKeyStatus.textContent = '✓ API key saved successfully';
+              googleApiKeyStatus.style.color = 'var(--accent)';
             }
-            log('API key saved');
+            log('Google Speech API key saved');
           } else {
-            if (apiKeyStatus) {
-              apiKeyStatus.textContent = '✗ Failed to save API key';
-              apiKeyStatus.style.color = 'var(--danger)';
+            if (googleApiKeyStatus) {
+              googleApiKeyStatus.textContent = '✗ Failed to save API key';
+              googleApiKeyStatus.style.color = 'var(--danger)';
             }
           }
         }).catch(function(err) {
-          if (apiKeyStatus) {
-            apiKeyStatus.textContent = '✗ Error: ' + err.message;
-            apiKeyStatus.style.color = 'var(--danger)';
+          if (googleApiKeyStatus) {
+            googleApiKeyStatus.textContent = '✗ Error: ' + err.message;
+            googleApiKeyStatus.style.color = 'var(--danger)';
+          }
+        });
+      });
+    }
+
+    // Save Gemini API key
+    if (btnSaveGeminiApiKey) {
+      btnSaveGeminiApiKey.addEventListener('click', function() {
+        var key = inpGeminiApiKey ? inpGeminiApiKey.value.trim() : '';
+        if (!key) {
+          if (geminiApiKeyStatus) {
+            geminiApiKeyStatus.textContent = '⚠ Please enter a valid API key';
+            geminiApiKeyStatus.style.color = 'var(--danger)';
+          }
+          return;
+        }
+        api.updateSpeechSettings({ geminiApiKey: key }).then(function(res) {
+          if (res && res.success) {
+            if (geminiApiKeyStatus) {
+              geminiApiKeyStatus.textContent = '✓ API key saved successfully';
+              geminiApiKeyStatus.style.color = 'var(--accent)';
+            }
+            log('Gemini API key saved');
+          } else {
+            if (geminiApiKeyStatus) {
+              geminiApiKeyStatus.textContent = '✗ Failed to save API key';
+              geminiApiKeyStatus.style.color = 'var(--danger)';
+            }
+          }
+        }).catch(function(err) {
+          if (geminiApiKeyStatus) {
+            geminiApiKeyStatus.textContent = '✗ Error: ' + err.message;
+            geminiApiKeyStatus.style.color = 'var(--danger)';
+          }
+        });
+      });
+    }
+
+    // Save Bitdeer API key
+    if (btnSaveBitdeerApiKey) {
+      btnSaveBitdeerApiKey.addEventListener('click', function() {
+        var key = inpBitdeerApiKey ? inpBitdeerApiKey.value.trim() : '';
+        if (!key) {
+          if (bitdeerApiKeyStatus) {
+            bitdeerApiKeyStatus.textContent = '⚠ Please enter a valid API key';
+            bitdeerApiKeyStatus.style.color = 'var(--danger)';
+          }
+          return;
+        }
+        api.updateSpeechSettings({ bitdeerApiKey: key }).then(function(res) {
+          if (res && res.success) {
+            if (bitdeerApiKeyStatus) {
+              bitdeerApiKeyStatus.textContent = '✓ API key saved successfully';
+              bitdeerApiKeyStatus.style.color = 'var(--accent)';
+            }
+            log('Bitdeer API key saved');
+          } else {
+            if (bitdeerApiKeyStatus) {
+              bitdeerApiKeyStatus.textContent = '✗ Failed to save API key';
+              bitdeerApiKeyStatus.style.color = 'var(--danger)';
+            }
+          }
+        }).catch(function(err) {
+          if (bitdeerApiKeyStatus) {
+            bitdeerApiKeyStatus.textContent = '✗ Error: ' + err.message;
+            bitdeerApiKeyStatus.style.color = 'var(--danger)';
           }
         });
       });

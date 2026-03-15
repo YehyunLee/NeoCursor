@@ -370,11 +370,18 @@ let activeSpeechEngine = 'google'; // 'whisper' or 'google'
 // Load API key from persistent storage first, fallback to .env
 const storedGoogleKey = store.get('googleApiKey');
 const initialGoogleKey = storedGoogleKey || process.env.GOOGLE_SPEECH_API_KEY || null;
+const storedGeminiKey = store.get('geminiApiKey');
+const initialGeminiKey = storedGeminiKey || process.env.GEMINI_API_KEY || null;
+const storedBitdeerKey = store.get('bitdeerApiKey');
+const initialBitdeerKey = storedBitdeerKey || process.env.BITDEER_API_KEY || null;
 
 let speechSettings = {
   engine: store.get('speechEngine', 'google'),  // Default to Google Cloud
   whisperModel: store.get('whisperModel', 'base'),
-  googleApiKey: initialGoogleKey
+  googleApiKey: initialGoogleKey,
+  llmProvider: store.get('llmProvider', 'gemini'),  // Default to Gemini
+  geminiApiKey: initialGeminiKey,
+  bitdeerApiKey: initialBitdeerKey
 };
 
 function createControlWindow() {
@@ -737,8 +744,11 @@ app.whenReady().then(() => {
   // VSR DISABLED - Initialize VSR handler
   // vsrHandler = new VSRHandler();
   
-  // Initialize Speech handlers
-  speechHandler = new SpeechHandler();
+  // Initialize Speech handlers with LLM settings
+  const llmApiKey = speechSettings.llmProvider === 'gemini' ? speechSettings.geminiApiKey : 
+                    speechSettings.llmProvider === 'bitdeer' ? speechSettings.bitdeerApiKey : null;
+  speechHandler = new SpeechHandler(speechSettings.llmProvider, llmApiKey);
+  
   if (speechSettings.googleApiKey) {
     const GoogleSpeechHandler = require('./google-speech-handler');
     googleSpeechHandler = new GoogleSpeechHandler(speechSettings.googleApiKey);
@@ -1003,7 +1013,7 @@ ipcMain.handle('get-speech-settings', async () => {
   };
 });
 
-ipcMain.handle('update-speech-settings', async (event, { engine, whisperModel, googleApiKey }) => {
+ipcMain.handle('update-speech-settings', async (event, { engine, whisperModel, googleApiKey, llmProvider, geminiApiKey, bitdeerApiKey }) => {
   try {
     if (engine) {
       speechSettings.engine = engine;
@@ -1013,6 +1023,21 @@ ipcMain.handle('update-speech-settings', async (event, { engine, whisperModel, g
     if (whisperModel) {
       speechSettings.whisperModel = whisperModel;
       store.set('whisperModel', whisperModel);
+    }
+    if (llmProvider !== undefined) {
+      speechSettings.llmProvider = llmProvider;
+      store.set('llmProvider', llmProvider);
+      console.log(`[Settings] LLM provider set to: ${llmProvider}`);
+    }
+    if (geminiApiKey !== undefined) {
+      speechSettings.geminiApiKey = geminiApiKey;
+      store.set('geminiApiKey', geminiApiKey);
+      console.log('[Settings] Gemini API key updated');
+    }
+    if (bitdeerApiKey !== undefined) {
+      speechSettings.bitdeerApiKey = bitdeerApiKey;
+      store.set('bitdeerApiKey', bitdeerApiKey);
+      console.log('[Settings] Bitdeer API key updated');
     }
     if (googleApiKey !== undefined) {
       speechSettings.googleApiKey = googleApiKey;
