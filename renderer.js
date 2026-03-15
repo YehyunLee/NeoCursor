@@ -43,6 +43,8 @@ let transcriptContent = null;
 let transcriptText = '';
 let transcriptBoxVisible = false;
 let overlayMousePassthrough = true;
+let transcriptLoading = null;
+let transcriptRephraseBtn = null;
 
 // Head tracking state
 let sensitivity = 15;
@@ -648,10 +650,11 @@ window.addEventListener('load', () => {
   // Initialize transcript box elements
   transcriptBox = document.getElementById('transcript-box');
   transcriptContent = document.getElementById('transcript-content');
+  transcriptLoading = document.getElementById('transcript-loading');
   
   // Wire up transcript box buttons
   const transcriptClear = document.getElementById('transcript-clear');
-  const transcriptRephrase = document.getElementById('transcript-rephrase');
+  transcriptRephraseBtn = document.getElementById('transcript-rephrase');
   const transcriptSubmit = document.getElementById('transcript-submit');
   
   if (transcriptBox) {
@@ -673,8 +676,8 @@ window.addEventListener('load', () => {
     });
   }
   
-  if (transcriptRephrase) {
-    transcriptRephrase.addEventListener('click', async () => {
+  if (transcriptRephraseBtn) {
+    transcriptRephraseBtn.addEventListener('click', async () => {
       if (!transcriptText.trim()) return;
       await rephraseTranscript();
     });
@@ -1135,6 +1138,15 @@ function hideTranscriptBox() {
   setOverlayMousePassthrough(true);
 }
 
+function setTranscriptLoading(isLoading) {
+  if (!transcriptLoading) return;
+  transcriptLoading.classList.toggle('active', isLoading);
+  if (transcriptRephraseBtn) {
+    transcriptRephraseBtn.disabled = isLoading;
+    transcriptRephraseBtn.textContent = isLoading ? '…' : '✨';
+  }
+}
+
 function addToTranscript(text) {
   if (!text || !text.trim()) return;
   
@@ -1158,6 +1170,7 @@ async function rephraseTranscript() {
   if (!transcriptText.trim()) return;
   
   try {
+    setTranscriptLoading(true);
     updateStatus(statusElements.speech, 'Rephrasing with Gemini...', '#a855f7');
     const result = await window.electronAPI.rephraseText(transcriptText);
     
@@ -1177,6 +1190,8 @@ async function rephraseTranscript() {
     console.error('[Transcript] Rephrase error:', error);
     updateStatus(statusElements.speech, 'Rephrase error', '#e94560');
     setTimeout(() => updateSpeechMonitoringStatus(), 2000);
+  } finally {
+    setTranscriptLoading(false);
   }
 }
 
@@ -1184,11 +1199,6 @@ async function submitTranscript() {
   if (!transcriptText.trim()) return;
   
   try {
-    // Click at current cursor position to focus the target before typing
-    await window.electronAPI.mouseClick('left');
-    // Small delay to ensure click is processed
-    await new Promise(resolve => setTimeout(resolve, 100));
-    
     await window.electronAPI.typeText(transcriptText);
     console.log('[Transcript] Submitted:', transcriptText);
     hideTranscriptBox();

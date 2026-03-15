@@ -537,6 +537,38 @@
       border-radius: 3px;
     }
 
+    .transcript-loading {
+      display: none;
+      align-items: center;
+      gap: 0.5rem;
+      margin-bottom: 0.75rem;
+      padding: 0.5rem 0.75rem;
+      background: rgba(0, 255, 200, 0.08);
+      border: 1px dashed rgba(0, 255, 200, 0.4);
+      color: var(--accent);
+      font-size: 0.85rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+    }
+
+    .transcript-loading.active {
+      display: flex;
+    }
+
+    .loading-spinner {
+      width: 16px;
+      height: 16px;
+      border-radius: 50%;
+      border: 2px solid rgba(0, 255, 200, 0.2);
+      border-top-color: var(--accent);
+      animation: spin 0.8s linear infinite;
+    }
+
+    @keyframes spin {
+      from { transform: rotate(0deg); }
+      to { transform: rotate(360deg); }
+    }
+
     #transcript-buttons {
       display: flex;
       gap: 0.5rem;
@@ -730,6 +762,10 @@
   <!-- Floating transcript box -->
   <div id="transcript-box" style="display: none;">
     <div id="transcript-content"></div>
+    <div id="transcript-loading" class="transcript-loading">
+      <div class="loading-spinner"></div>
+      <span>Rephrasing…</span>
+    </div>
     <div id="transcript-buttons">
       <button id="transcript-clear" class="transcript-btn" title="Clear">✕</button>
       <button id="transcript-rephrase" class="transcript-btn" title="Rephrase">✨</button>
