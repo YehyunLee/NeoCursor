@@ -16,8 +16,3 @@ ENV/
 env.bak/
 venv.bak/
 benchmarks/
-
-# Website download assets (host on GitHub Releases instead; >100MB)
-website/downloads/*.exe
-website/downloads/*.dmg
-website/downloads/*.zip
