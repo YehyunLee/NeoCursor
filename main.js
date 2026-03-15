@@ -1,5 +1,3 @@
-// Log immediately to see if main.js runs before any crash (e.g. 0xC0000005)
-console.error('[SilentCursor] main.js ENTRY');
 require('dotenv').config();
 const { app, BrowserWindow, ipcMain, screen, globalShortcut } = require('electron');
 const path = require('path');
@@ -7,7 +5,7 @@ const { spawn } = require('child_process');
 const server = require('./server');
 const VSRHandler = require('./vsr-handler');
 const SpeechHandler = require('./speech-handler');
-// Defer loading google-speech-handler (pulls in @google-cloud/speech native bindings) to avoid 0xC0000005 on Windows at startup
+const GoogleSpeechHandler = require('./google-speech-handler');
 const CursorMonitor = require('./cursor-monitor');
 
 let robot = null;
@@ -18,19 +16,12 @@ app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 
-// On Windows, do not load robotjs — it often crashes with 0xC0000005 (access violation).
-// Use the PowerShell cursor helper for mouse/keyboard instead.
-if (process.platform === 'win32') {
+try {
+  robot = require('robotjs');
+  console.log('Using robotjs for mouse control');
+} catch (error) {
+  console.warn('robotjs not available, using OS-specific fallback');
   useNativeControl = true;
-  console.log('Windows: using PowerShell helper (robotjs skipped to avoid crash)');
-} else {
-  try {
-    robot = require('robotjs');
-    console.log('Using robotjs for mouse control');
-  } catch (error) {
-    console.warn('robotjs not available, using OS-specific fallback');
-    useNativeControl = true;
-  }
 }
 
 // Persistent helper process for fast cursor control without robotjs
@@ -56,11 +47,6 @@ function triggerSystemShortcut(action) {
       return true;
     }
 
-    if (process.platform === 'win32' && cursorHelper && cursorHelper.stdin && !cursorHelper.killed) {
-      cursorHelper.stdin.write((action === 'paste' ? 'PASTE' : 'COPY') + '\n');
-      return true;
-    }
-
     console.warn(`[Shortcut] No implementation for ${action} on platform ${process.platform}`);
     return false;
   } catch (error) {
@@ -80,7 +66,6 @@ function startCursorHelper() {
       "Add-Type -MemberDefinition '",
       "[DllImport(\"user32.dll\")] public static extern bool SetCursorPos(int X, int Y);",
       "[DllImport(\"user32.dll\")] public static extern void mouse_event(int f, int dx, int dy, int c, int i);",
-      "[DllImport(\"user32.dll\")] public static extern void keybd_event(byte bVk, byte bScan, int dwFlags, int dwExtraInfo);",
       "' -Name U32 -Namespace W;",
       "while($true){",
         "$l=[Console]::In.ReadLine();",
@@ -104,19 +89,6 @@ function startCursorHelper() {
           "if($p.Length-ge2-and$p[1]-eq'right'){[W.U32]::mouse_event(16,0,0,0,0)}",
           "else{[W.U32]::mouse_event(4,0,0,0,0)}",
         "}",
-        // ALTTAB left=1 (Alt+Shift+Tab), else Alt+Tab
-        // keybd_event: 0x12=Alt, 0x10=Shift, 0x09=Tab; KEYEVENTF_KEYUP=0x0002
-        "elseif($p[0]-eq'ALTTAB'){",
-          "$rev=($p.Length-ge2-and$p[1]-eq'left');",
-          "[W.U32]::keybd_event(0x12,0,0,0);",
-          "if($rev){[W.U32]::keybd_event(0x10,0,0,0)}",
-          "[W.U32]::keybd_event(0x09,0,0,0);",
-          "[W.U32]::keybd_event(0x09,0,2,0);",
-          "if($rev){[W.U32]::keybd_event(0x10,0,2,0)}",
-          "[W.U32]::keybd_event(0x12,0,2,0);",
-        "}",
-        "elseif($p[0]-eq'COPY'){[W.U32]::keybd_event(0x11,0,0,0);[W.U32]::keybd_event(0x43,0,0,0);[W.U32]::keybd_event(0x43,0,2,0);[W.U32]::keybd_event(0x11,0,2,0)}",
-        "elseif($p[0]-eq'PASTE'){[W.U32]::keybd_event(0x11,0,0,0);[W.U32]::keybd_event(0x56,0,0,0);[W.U32]::keybd_event(0x56,0,2,0);[W.U32]::keybd_event(0x11,0,2,0)}",
       "}"
     ].join(' ');
 
@@ -231,6 +203,7 @@ function sendMouseUp(button) {
 }
 
 let mainWindow;
+let controlsWindow;
 let vsrHandler = null;
 let speechHandler = null;
 let googleSpeechHandler = null;
@@ -243,6 +216,29 @@ let speechSettings = {
   whisperModel: 'base',
   googleApiKey: initialGoogleKey
 };
+
+function createControlWindow() {
+  controlsWindow = new BrowserWindow({
+    width: 600,
+    height: 800,
+    title: 'SilentCursor Control Panel',
+    webPreferences: {
+      preload: path.join(__dirname, 'preload.js'),
+      nodeIntegration: false,
+      contextIsolation: true
+    }
+  });
+
+  controlsWindow.loadFile('controls.html');
+  // Open DevTools in development
+  if (process.env.NODE_ENV === 'development') {
+    controlsWindow.webContents.openDevTools();
+  }
+
+  controlsWindow.on('closed', () => {
+    controlsWindow = null;
+  });
+}
 
 function createWindow() {
   const { width, height } = screen.getPrimaryDisplay().bounds;
@@ -277,14 +273,6 @@ function createWindow() {
   // Use 'screen-saver' level so overlay appears over macOS full screen spaces
   mainWindow.setAlwaysOnTop(true, 'screen-saver');
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
-
-  // When user switches to another app (e.g. taskbar click), lower overlay so they can see it
-  mainWindow.on('blur', () => {
-    mainWindow.setAlwaysOnTop(false);
-  });
-  mainWindow.on('focus', () => {
-    mainWindow.setAlwaysOnTop(true, 'screen-saver');
-  });
   
   // Additional setting to ensure visibility over fullscreen apps
   if (process.platform === 'darwin') {
@@ -298,6 +286,10 @@ function createWindow() {
   if (process.env.NODE_ENV === 'development') {
     mainWindow.webContents.openDevTools();
   }
+  
+  mainWindow.on('closed', () => {
+    mainWindow = null;
+  });
 
   // Handle camera permission requests
   mainWindow.webContents.session.setPermissionRequestHandler((webContents, permission, callback) => {
@@ -308,6 +300,27 @@ function createWindow() {
     }
   });
 }
+
+// IPC for Control Panel <-> Overlay communication
+ipcMain.on('control-command', (event, { command, value }) => {
+  // Forward command to overlay window
+  if (mainWindow && mainWindow.webContents) {
+    mainWindow.webContents.send('control-command', { command, value });
+  }
+});
+
+ipcMain.on('request-overlay-status', (event) => {
+  if (mainWindow && mainWindow.webContents) {
+    mainWindow.webContents.send('control-command', { command: 'get-status' });
+  }
+});
+
+ipcMain.on('overlay-status-update', (event, status) => {
+  // Forward status to control window
+  if (controlsWindow && controlsWindow.webContents) {
+    controlsWindow.webContents.send('overlay-status-update', status);
+  }
+});
 
 // IPC handler to get screen bounds for absolute positioning
 ipcMain.handle('get-screen-bounds', async () => {
@@ -520,18 +533,6 @@ ipcMain.handle('alt-tab', async (event, { direction }) => {
       
       spawn('osascript', ['-e', script]);
       console.log(`[Alt-Tab] Switched ${direction}`);
-    } else if (process.platform === 'win32') {
-      // Windows: route through the persistent PowerShell helper which uses
-      // keybd_event at driver level — works even when Electron is not focused.
-      if (cursorHelper && cursorHelper.stdin && !cursorHelper.killed) {
-        cursorHelper.stdin.write(`ALTTAB ${direction}\n`);
-        console.log(`[Alt-Tab] Switched ${direction} via cursorHelper`);
-      } else if (robot) {
-        // Fallback if helper isn't running yet
-        const modifier = direction === 'left' ? ['alt', 'shift'] : ['alt'];
-        robot.keyTap('tab', modifier);
-        console.log(`[Alt-Tab] Switched ${direction} via robotjs fallback`);
-      }
     } else if (process.platform === 'linux') {
       // Linux: Alt+Tab or Alt+Shift+Tab
       const keys = direction === 'left' ? 'alt+shift+Tab' : 'alt+Tab';
@@ -548,6 +549,7 @@ ipcMain.handle('alt-tab', async (event, { direction }) => {
 app.whenReady().then(() => {
   startCursorHelper();
   createWindow();
+  createControlWindow();
   
   // Initialize VSR handler
   vsrHandler = new VSRHandler();
@@ -555,7 +557,6 @@ app.whenReady().then(() => {
   // Initialize Speech handlers
   speechHandler = new SpeechHandler();
   if (speechSettings.googleApiKey) {
-    const GoogleSpeechHandler = require('./google-speech-handler');
     googleSpeechHandler = new GoogleSpeechHandler(speechSettings.googleApiKey);
   }
   
@@ -570,9 +571,22 @@ app.whenReady().then(() => {
   });
   
   const handleTranscript = (text) => {
-    // Type the transcribed text at whatever has OS focus (same path as VSR / type-text IPC)
+    // Type the transcribed text - now handled by unified type-text handler
     try {
-      doTypeText(text);
+      if (useNativeControl) {
+        if (process.platform === 'darwin') {
+          const escapedText = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+          spawn('osascript', ['-e', `tell application "System Events" to keystroke "${escapedText}"`]);
+          console.log('[Speech] Typed via AppleScript:', text);
+        } else if (process.platform === 'linux') {
+          spawn('xdotool', ['type', '--', text]);
+          console.log('[Speech] Typed via xdotool:', text);
+        } else {
+          console.log('[Speech] Would type:', text);
+        }
+      } else if (robot) {
+        robot.typeString(text);
+      }
     } catch (err) {
       console.error('[Speech] Error typing text:', err);
     }
@@ -588,11 +602,6 @@ app.whenReady().then(() => {
     if (mainWindow) {
       mainWindow.webContents.send('toggle-vsr-recording');
     }
-  });
-
-  // Quit the overlay app (Ctrl+Q / Cmd+Q)
-  globalShortcut.register('CommandOrControl+Q', () => {
-    app.quit();
   });
 
   app.on('activate', function () {
@@ -716,34 +725,28 @@ ipcMain.handle('speech-feed-audio', async (event, { audioBuffer }) => {
   }
 });
 
-// Shared: type a string at the current OS focus (used by IPC and by voice-speech callback)
-function doTypeText(text) {
-  if (!text) return;
-  if (useNativeControl) {
-    if (process.platform === 'darwin') {
-      const escapedText = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
-      spawn('osascript', ['-e', `tell application "System Events" to keystroke "${escapedText}"`]);
-      console.log('[Type] Typed via AppleScript:', text);
-    } else if (process.platform === 'linux') {
-      spawn('xdotool', ['type', '--', text]);
-      console.log('[Type] Typed via xdotool:', text);
-    } else if (process.platform === 'win32') {
-      const b64 = Buffer.from(text, 'utf8').toString('base64');
-      const script = `$t=[System.Text.Encoding]::UTF8.GetString([System.Convert]::FromBase64String('${b64}'));$t=$t -replace '\\+','{+}' -replace '\\^','{^}' -replace '%','{%}' -replace '~','{~}' -replace '\\(','{(' -replace '\\)','{)}' -replace '\\[','{[' -replace '\\]','{]}' -replace '\\{','{{}' -replace '\\}','{}}' -replace \"\\r?\\n\",'{ENTER}';Add-Type -AssemblyName System.Windows.Forms;[System.Windows.Forms.SendKeys]::SendWait($t)`;
-      spawn('powershell', ['-NoProfile', '-NonInteractive', '-EncodedCommand', Buffer.from(script, 'utf16le').toString('base64')]);
-      console.log('[Type] Typed via SendKeys:', text);
-    }
-  } else if (robot) {
-    robot.typeString(text);
-    console.log('[Type] Typed via robotjs:', text);
-  }
-}
-
 // Type text IPC handler - unified keyboard output for all speech sources
 ipcMain.handle('type-text', async (event, { text }) => {
   try {
     if (!text) return { success: false, error: 'No text provided' };
-    doTypeText(text);
+    
+    if (useNativeControl) {
+      if (process.platform === 'darwin') {
+        // Use AppleScript to type on macOS
+        const escapedText = text.replace(/\\/g, '\\\\').replace(/"/g, '\\"');
+        spawn('osascript', ['-e', `tell application "System Events" to keystroke "${escapedText}"`]);
+        console.log('[Type] Typed via AppleScript:', text);
+      } else if (process.platform === 'linux') {
+        // Use xdotool to type on Linux
+        spawn('xdotool', ['type', '--', text]);
+        console.log('[Type] Typed via xdotool:', text);
+      } else {
+        console.log('[Type] Would type:', text);
+      }
+    } else if (robot) {
+      robot.typeString(text);
+      console.log('[Type] Typed via robotjs:', text);
+    }
     return { success: true };
   } catch (error) {
     console.error('[Type] Error typing text:', error);
@@ -768,9 +771,8 @@ ipcMain.handle('update-speech-settings', async (event, { engine, whisperModel, g
     if (whisperModel) speechSettings.whisperModel = whisperModel;
     if (googleApiKey !== undefined) {
       speechSettings.googleApiKey = googleApiKey;
-      // Reinitialize Google handler if API key changed (lazy-load module)
+      // Reinitialize Google handler if API key changed
       if (googleApiKey) {
-        const GoogleSpeechHandler = require('./google-speech-handler');
         googleSpeechHandler = new GoogleSpeechHandler(googleApiKey);
         googleSpeechHandler.onTranscriptReady = speechHandler.onTranscriptReady;
       } else {
