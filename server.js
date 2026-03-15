@@ -19,8 +19,12 @@ app.get('/', (req, res) => {
   res.sendFile(path.join(__dirname, 'index.html'));
 });
 
+const fs = require('fs');
+const startupLog = path.join(__dirname, 'silentcursor-startup.log');
 const server = app.listen(PORT, () => {
-  console.log(`Server running at http://localhost:${PORT}`);
+  const msg = `Server running at http://localhost:${PORT}`;
+  try { fs.appendFileSync(startupLog, `[${new Date().toISOString()}] ${msg}\n`); } catch (_) {}
+  process.stderr.write(`[SilentCursor] ${msg}\n`);
 });
 
 module.exports = server;
