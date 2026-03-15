@@ -21,5 +21,12 @@ contextBridge.exposeInMainWorld('electronAPI', {
   typeText: (text) => ipcRenderer.invoke('type-text', { text }),
   copySelection: () => ipcRenderer.invoke('copy-selection'),
   pasteClipboard: () => ipcRenderer.invoke('paste-clipboard'),
-  onTextModeChanged: (callback) => ipcRenderer.on('text-mode-changed', (event, isTextMode) => callback(isTextMode))
+  onTextModeChanged: (callback) => ipcRenderer.on('text-mode-changed', (event, isTextMode) => callback(isTextMode)),
+  
+  // Control Panel <-> Overlay Communication
+  sendControlCommand: (command, value) => ipcRenderer.send('control-command', { command, value }),
+  requestOverlayStatus: () => ipcRenderer.send('request-overlay-status'),
+  onControlCommand: (callback) => ipcRenderer.on('control-command', (event, { command, value }) => callback(command, value)),
+  sendOverlayStatus: (status) => ipcRenderer.send('overlay-status-update', status),
+  onOverlayStatus: (callback) => ipcRenderer.on('overlay-status-update', (event, status) => callback(status))
 });
