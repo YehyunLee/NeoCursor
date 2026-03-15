@@ -93,9 +93,9 @@ let faceMesh, camera, videoElement, canvasElement, canvasCtx;
 // Blink Detection - using iris landmarks for more reliable detection
 const RIGHT_EYE = [33, 160, 158, 133, 153, 144];
 const LEFT_EYE = [362, 385, 387, 263, 373, 380];
-const BLINK_CLOSE_THRESHOLD = 0.20; // Increased from 0.18 for easier detection
-const BLINK_OPEN_THRESHOLD = 0.25; // Increased from 0.24
-const CLICK_COOLDOWN = 800;  // ms between clicks
+const BLINK_CLOSE_THRESHOLD = 0.23; // Higher = easier to trigger (less eye closure needed)
+const BLINK_OPEN_THRESHOLD = 0.27; // Higher = easier to detect eye opening
+const CLICK_COOLDOWN = 600;  // ms between clicks (reduced for faster clicking)
 let lastLeftClickTime = 0;
 let lastRightClickTime = 0;
 
