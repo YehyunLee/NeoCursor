@@ -718,7 +718,50 @@ window.addEventListener('load', () => {
       startSpeech().catch((err) => console.error('[Speech] Auto-start failed:', err));
     }
   }, 1200);
+
+  // Listen for commands from Control Panel
+  window.electronAPI.onControlCommand((command, value) => {
+    switch(command) {
+      case 'toggle-tracking':
+        if (isTracking) stopTracking(); else startTracking();
+        break;
+      case 'recenter':
+        recenter();
+        break;
+      case 'toggle-video':
+        toggleVideoPreview();
+        break;
+      case 'toggle-speech':
+        toggleSpeech();
+        break;
+      case 'set-sensitivity':
+        sensitivity = parseInt(value);
+        const sSlider = document.getElementById('sensitivity-slider');
+        const sValue = document.getElementById('sensitivity-value');
+        if (sSlider) sSlider.value = sensitivity;
+        if (sValue) sValue.textContent = sensitivity;
+        break;
+      case 'get-status':
+        sendOverlayStatus();
+        break;
+    }
+    // Small delay to allow state to update
+    setTimeout(sendOverlayStatus, 50);
+  });
+
+  // Send initial status
+  setTimeout(sendOverlayStatus, 1500);
 });
+
+function sendOverlayStatus() {
+  window.electronAPI.sendOverlayStatus({
+    isTracking,
+    videoVisible,
+    sensitivity,
+    speechActive: isSpeechActive,
+    vsrRecording: isVSRRecording
+  });
+}
 
 // VSR Recording Functions
 async function toggleVSRRecording() {
@@ -1003,6 +1046,3 @@ async function stopSpeech() {
     updateStatus(statusElements.speech, 'Error stopping voice control', '#e94560');
   }
 }
-
-
-
