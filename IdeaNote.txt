@@ -16,15 +16,19 @@ Problem:
 Whether you are vibe coding or writing, sometimes you get tired typing, controlling mouse or speaking. If you are using speech-to-text, you often get tired quickly.
 
 Solution:
-To solve this, we introduce our application to let users control the mouse by eye movement and use silent speech without speaking out loud to type. Now, you can vibe code without moving an inch of your hand or using your voice.
+To solve this, we introduce NeoCursor - an application that lets users control the mouse by head tracking and eye gestures. Now, you can navigate your computer without moving an inch of your hand.
 
 Tech:
-Visual speech recognition
-LLM
-Computer Vision
+Computer Vision (MediaPipe Face Mesh)
+Head tracking for cursor control
+Eye blink detection for clicks
+Gaze-based triggers for scrolling/window switching
+Optional: Speech-to-Text (Google Cloud / Faster-Whisper)
 Standalone app for desktop
 
-Name ideas:
+Name: NeoCursor (formerly SilentCursor)
+
+Previous name ideas:
 iSpeak
 EyeSpeak
 SilentCursor
