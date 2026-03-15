@@ -362,11 +362,11 @@ let speechHandler = null;
 let googleSpeechHandler = null;
 let cursorMonitor = null;
 let commandProcessor = null;
-let activeSpeechEngine = 'whisper'; // 'whisper' or 'google'
+let activeSpeechEngine = 'google'; // 'whisper' or 'google'
 
 const initialGoogleKey = process.env.GOOGLE_SPEECH_API_KEY || null;
 let speechSettings = {
-  engine: 'google',  // Default to Google Cloud when available
+  engine: 'google',  // Default to Google Cloud
   whisperModel: 'base',
   googleApiKey: initialGoogleKey
 };
@@ -736,7 +736,9 @@ app.whenReady().then(() => {
     googleSpeechHandler = new GoogleSpeechHandler(speechSettings.googleApiKey);
   } else {
     // Fall back to Whisper if Google API key not configured
+    console.warn('[Speech] No Google API key found, falling back to Whisper');
     speechSettings.engine = 'whisper';
+    activeSpeechEngine = 'whisper';
   }
   
   // Initialize command processor
