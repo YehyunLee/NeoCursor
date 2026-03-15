@@ -38,7 +38,7 @@ NeoCursor is a hands-free interface for the modern developer. It transforms the 
 
 **Gaze-Based Navigation:** Using standard webcam feeds, NeoCursor tracks eye movement to control the cursor. It utilizes "Blink-Logic"—where short left/right blinks act as clicks, and sustained winks trigger complex actions like dragging or pasting.
 
-**Speech Input:** Using Google Cloud Speech-to-Text or local Faster-Whisper, users can dictate code and text naturally. The system integrates with Gemini AI to clean up transcripts, fix spelling/grammar, and intelligently detect voice commands (like "select all" or "paste") so they execute as keyboard shortcuts instead of typing literally.
+**Speech Input:** Using Google Cloud Speech-to-Text or local Faster-Whisper, users can dictate code and text naturally. The system integrates with Gemini AI **or Bitdeer AI (DeepSeek)** to clean up transcripts, fix spelling/grammar, and intelligently detect voice commands (like "select all" or "paste") so they execute as keyboard shortcuts instead of typing literally.
 
 **Key Features:**
 - Edge-Bar Triggers: Stay in the flow by gazing at the screen edges to scroll or switch windows instantly.

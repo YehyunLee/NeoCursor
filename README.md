@@ -19,6 +19,7 @@ NeoCursor provides a hands-free computing experience using eye-tracking and voic
 2. **Allow camera access** when the app asks. Use the **Control Panel** window to start tracking, adjust sensitivity, and choose the speech engine.
 
 3. **Optional:** Configure your Google Speech-to-Text API key in the Control Panel Settings (or use Faster-Whisper for offline speech recognition). For development, you can also use a `.env` file — see `.env.example`.
+4. **Optional LLM Sponsor Choice:** In Settings you can pick between **Google Gemini** and **Bitdeer AI (DeepSeek)** for transcript cleanup and command detection. Each provider needs its own API key (enter it in-app or via `.env`).
 
 ---
 
@@ -101,10 +102,12 @@ Speech is gated by simple VAD (voice activity); while the app thinks you’re sp
 - **Control Panel Settings**:  
   - Configure Google Speech API key directly in the app (Settings section)
   - Choose between Google Speech-to-Text (cloud) or Faster-Whisper (offline)
+  - Select LLM provider: Google Gemini or Bitdeer AI (DeepSeek) and save the corresponding API key
   - Adjust cursor sensitivity (1-50)
 - **`.env`** (optional for development):  
   - `GOOGLE_SPEECH_API_KEY` — for Google Speech-to-Text
-  - `GEMINI_API_KEY` — for LLM-based transcript improvement
+  - `GEMINI_API_KEY` — for Gemini-based transcript improvement
+  - `BITDEER_API_KEY` — for Bitdeer AI (DeepSeek) transcript improvement
 
 ---
 
