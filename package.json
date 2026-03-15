@@ -57,6 +57,7 @@
     "@mediapipe/camera_utils": "^0.3.1675466862",
     "@mediapipe/face_mesh": "^0.4.1633559619",
     "dotenv": "^17.3.1",
+    "electron-store": "^8.1.0",
     "express": "^5.2.1"
   },
   "optionalDependencies": {

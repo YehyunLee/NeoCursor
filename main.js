@@ -5,6 +5,9 @@ const STARTUP_LOG = path.join(__dirname, 'neocursor-startup.log');
 try { fs.appendFileSync(STARTUP_LOG, `[${new Date().toISOString()}] main.js ENTRY\n`); } catch (_) {}
 
 require('dotenv').config();
+const Store = require('electron-store');
+const store = new Store();
+
 const logStart = (msg) => {
   const line = `[${new Date().toISOString()}] ${msg}\n`;
   try { fs.appendFileSync(STARTUP_LOG, line); } catch (_) {}
@@ -364,10 +367,13 @@ let cursorMonitor = null;
 let commandProcessor = null;
 let activeSpeechEngine = 'google'; // 'whisper' or 'google'
 
-const initialGoogleKey = process.env.GOOGLE_SPEECH_API_KEY || null;
+// Load API key from persistent storage first, fallback to .env
+const storedGoogleKey = store.get('googleApiKey');
+const initialGoogleKey = storedGoogleKey || process.env.GOOGLE_SPEECH_API_KEY || null;
+
 let speechSettings = {
-  engine: 'google',  // Default to Google Cloud
-  whisperModel: 'base',
+  engine: store.get('speechEngine', 'google'),  // Default to Google Cloud
+  whisperModel: store.get('whisperModel', 'base'),
   googleApiKey: initialGoogleKey
 };
 
@@ -999,15 +1005,49 @@ ipcMain.handle('get-speech-settings', async () => {
 
 ipcMain.handle('update-speech-settings', async (event, { engine, whisperModel, googleApiKey }) => {
   try {
-    if (engine) speechSettings.engine = engine;
-    if (whisperModel) speechSettings.whisperModel = whisperModel;
+    if (engine) {
+      speechSettings.engine = engine;
+      store.set('speechEngine', engine);
+      activeSpeechEngine = engine;
+    }
+    if (whisperModel) {
+      speechSettings.whisperModel = whisperModel;
+      store.set('whisperModel', whisperModel);
+    }
     if (googleApiKey !== undefined) {
       speechSettings.googleApiKey = googleApiKey;
+      store.set('googleApiKey', googleApiKey);
+      
       // Reinitialize Google handler if API key changed (lazy-load module)
       if (googleApiKey) {
         const GoogleSpeechHandler = require('./google-speech-handler');
         googleSpeechHandler = new GoogleSpeechHandler(googleApiKey);
-        googleSpeechHandler.onTranscriptReady = speechHandler.onTranscriptReady;
+        const handleTranscript = (payload) => {
+          const text = typeof payload === 'string' ? payload : payload.text;
+          const commandHint = typeof payload === 'object' ? payload.commandHint : null;
+          
+          console.log(`[Speech] Received transcript: "${text}"${commandHint ? ' [hint: ' + commandHint + ']' : ''}`);
+          
+          if (commandHint) {
+            const result = commandProcessor.processTranscript(commandHint);
+            if (result.isCommand) {
+              console.log(`[Speech] Gemini command hint matched: "${commandHint}" -> "${result.matchedCommand}"`);
+              const success = executeKeyboardAction(result.action);
+              console.log(`[Speech] Command execution ${success ? 'succeeded' : 'failed'}`);
+              if (success) return;
+            }
+          }
+          
+          const result = commandProcessor.processTranscript(text);
+          if (result.isCommand) {
+            const success = executeKeyboardAction(result.action);
+            if (!success) typeText(text);
+          } else {
+            typeText(text);
+          }
+        };
+        googleSpeechHandler.onTranscriptReady = handleTranscript;
+        console.log('[Settings] Google Speech handler initialized with new API key');
       } else {
         googleSpeechHandler = null;
       }

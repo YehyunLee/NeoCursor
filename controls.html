@@ -112,6 +112,12 @@
         <option value="whisper">Faster-Whisper (Offline)</option>
       </select>
     </div>
+    <div class="control-group" id="google-api-key-group" style="margin-top: 1rem;">
+      <label>Google Speech API Key <span style="font-size: 0.75rem; opacity: 0.6;">(required for Google Speech)</span></label>
+      <input type="password" id="inp-google-api-key" placeholder="Enter your Google Cloud API key" style="width: 100%; padding: 0.5rem; background: var(--bg); border: 1px solid var(--border-dim); color: var(--text); border-radius: 4px; font-family: 'JetBrains Mono', monospace; font-size: 0.85rem;">
+      <button id="btn-save-api-key" class="secondary" style="margin-top: 0.5rem; width: auto; padding: 0.5rem 1rem;">Save API Key</button>
+      <p id="api-key-status" style="font-size: 0.75rem; margin-top: 0.5rem; color: var(--muted);"></p>
+    </div>
   </div>
 
   <div class="section">
@@ -264,6 +270,59 @@
       api.getSpeechSettings().then(function(res) {
         if (res && res.success && selEngine) selEngine.value = res.settings.engine;
       }).catch(function() {});
+    }
+
+    // --- Google API Key Management ---
+    var inpApiKey = document.getElementById('inp-google-api-key');
+    var btnSaveApiKey = document.getElementById('btn-save-api-key');
+    var apiKeyStatus = document.getElementById('api-key-status');
+
+    // Load saved API key on startup
+    if (api.getSpeechSettings) {
+      api.getSpeechSettings().then(function(res) {
+        if (res && res.success && res.settings.googleApiKey) {
+          if (inpApiKey) inpApiKey.value = res.settings.googleApiKey;
+          if (apiKeyStatus) {
+            apiKeyStatus.textContent = '✓ API key configured';
+            apiKeyStatus.style.color = 'var(--accent)';
+          }
+        }
+      }).catch(function() {});
+    }
+
+    // Save API key
+    if (btnSaveApiKey) {
+      btnSaveApiKey.addEventListener('click', function() {
+        var key = inpApiKey ? inpApiKey.value.trim() : '';
+        if (!key) {
+          if (apiKeyStatus) {
+            apiKeyStatus.textContent = '⚠ Please enter a valid API key';
+            apiKeyStatus.style.color = 'var(--danger)';
+          }
+          return;
+        }
+
+        // Save via IPC
+        api.updateSpeechSettings({ googleApiKey: key }).then(function(res) {
+          if (res && res.success) {
+            if (apiKeyStatus) {
+              apiKeyStatus.textContent = '✓ API key saved successfully';
+              apiKeyStatus.style.color = 'var(--accent)';
+            }
+            log('API key saved');
+          } else {
+            if (apiKeyStatus) {
+              apiKeyStatus.textContent = '✗ Failed to save API key';
+              apiKeyStatus.style.color = 'var(--danger)';
+            }
+          }
+        }).catch(function(err) {
+          if (apiKeyStatus) {
+            apiKeyStatus.textContent = '✗ Error: ' + err.message;
+            apiKeyStatus.style.color = 'var(--danger)';
+          }
+        });
+      });
     }
   })();
   </script>
