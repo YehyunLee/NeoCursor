@@ -412,9 +412,9 @@ function triggerGazeAction(zone) {
   switch(zone) {
     case 'top':
       if (scrollTargetX != null && scrollTargetY != null) {
-        window.electronAPI.scrollAt(scrollTargetX, scrollTargetY, 0, 360);
+        window.electronAPI.scrollAt(scrollTargetX, scrollTargetY, 0, 72);
       } else {
-        window.electronAPI.scroll(0, 360);
+        window.electronAPI.scroll(0, 72);
       }
       updateStatus(statusElements.scroll, 'Scrolling Up', '#4ecca3');
       showActionFeedback('SCROLL ▲', 'scroll');
@@ -422,9 +422,9 @@ function triggerGazeAction(zone) {
       break;
     case 'bottom':
       if (scrollTargetX != null && scrollTargetY != null) {
-        window.electronAPI.scrollAt(scrollTargetX, scrollTargetY, 0, -360);
+        window.electronAPI.scrollAt(scrollTargetX, scrollTargetY, 0, -72);
       } else {
-        window.electronAPI.scroll(0, -360);
+        window.electronAPI.scroll(0, -72);
       }
       updateStatus(statusElements.scroll, 'Scrolling Down', '#4ecca3');
       showActionFeedback('SCROLL ▼', 'scroll');
