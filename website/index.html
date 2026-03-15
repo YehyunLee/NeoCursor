@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="description" content="NeoCursor — Control your computer with eye movement and voice. Hands-free computing for developers.">
+  <title>NeoCursor — Hands-free computing for developers</title>
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=JetBrains+Mono:wght@400;500;600&family=Space+Grotesk:wght@400;500;600;700&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <header class="header">
+    <div class="container">
+      <a href="/" class="logo">
+        <span class="logo-bracket">[</span><span class="logo-name">NeoCursor</span><span class="logo-bracket">]</span>
+      </a>
+      <nav class="nav">
+        <a href="#features">Features</a>
+        <a href="#download">Download</a>
+        <a href="#docs">Docs</a>
+        <a href="https://github.com/YehyunLee/NeoCursor" target="_blank" rel="noopener">GitHub</a>
+      </nav>
+    </div>
+  </header>
+
+  <main>
+    <section class="hero">
+      <div class="container">
+        <h1 class="hero-title">
+          <span class="line">Control your machine</span>
+          <span class="line accent">with your eyes and voice.</span>
+        </h1>
+        <p class="hero-subtitle">
+          Hands-free cursor control and speech-to-text for coders. No mouse, no keyboard needed for navigation and dictation.
+        </p>
+        <div class="hero-cta">
+          <a href="#download" class="btn btn-primary">Download for free</a>
+          <a href="https://github.com/YehyunLee/SilentCursor" target="_blank" rel="noopener" class="btn btn-secondary">View source</a>
+        </div>
+        <div class="hero-meta">
+          <span>Windows & macOS</span>
+          <span class="sep">·</span>
+          <span>Camera + mic</span>
+        </div>
+      </div>
+    </section>
+
+    <section id="features" class="section features">
+      <div class="container">
+        <h2 class="section-title">Built for developers</h2>
+        <ul class="feature-grid">
+          <li class="feature-card">
+            <span class="feature-icon">👁</span>
+            <h3>Eye tracking</h3>
+            <p>MediaPipe Face Mesh drives the cursor. Gaze at edges to scroll or switch apps.</p>
+          </li>
+          <li class="feature-card">
+            <span class="feature-icon">🎤</span>
+            <h3>Voice control</h3>
+            <p>Google Speech-to-Text or local Whisper. Dictate into any focused input.</p>
+          </li>
+          <li class="feature-card">
+            <span class="feature-icon">⌨</span>
+            <h3>Blink to click</h3>
+            <p>Left wink = click, right wink = right-click. Hold for drag; no hardware required.</p>
+          </li>
+          <li class="feature-card">
+            <span class="feature-icon">🖥</span>
+            <h3>Works everywhere</h3>
+            <p>IDE, browser, Overleaf, terminal. Scroll targets the pane you last clicked.</p>
+          </li>
+        </ul>
+      </div>
+    </section>
+
+    <section id="download" class="section download">
+      <div class="container">
+        <h2 class="section-title">Download</h2>
+        <p class="section-subtitle">Pick your platform. Install and run — camera and (optional) mic required.</p>
+        <div class="download-grid">
+          <div class="download-card">
+            <div class="download-os">Windows</div>
+            <p class="download-desc">64-bit installer. Run and allow camera access.</p>
+            <a href="downloads/SilentCursor-Setup-1.0.0.exe" class="btn btn-download" download>
+              NeoCursor Setup 1.0.0.exe
+            </a>
+          </div>
+          <div class="download-card">
+            <div class="download-os">macOS</div>
+            <p class="download-desc">DMG or ZIP. Requires macOS 10.13+.</p>
+            <a href="downloads/SilentCursor-1.0.0.dmg" class="btn btn-download" download>
+              NeoCursor 1.0.0.dmg
+            </a>
+            <p class="download-note">If the DMG is not available yet, build on a Mac (see BUILD.md).</p>
+          </div>
+        </div>
+        <p class="download-footer">Version 1.0.0 · <a href="https://github.com/YehyunLee/NeoCursor/releases" target="_blank" rel="noopener">Release notes</a></p>
+      </div>
+    </section>
+
+    <section id="docs" class="section docs">
+      <div class="container">
+        <h2 class="section-title">Quick start</h2>
+        <ol class="docs-list">
+          <li>Download and install for your OS.</li>
+          <li>Grant camera (and optionally microphone) access when prompted.</li>
+          <li>Use the Control Panel to start/stop tracking, adjust sensitivity, and choose speech engine.</li>
+          <li>Move your head to move the cursor; wink to click; gaze at top/bottom edges to scroll.</li>
+        </ol>
+        <p>For setup details, API keys (e.g. Google Speech), and troubleshooting, see the <a href="https://github.com/YehyunLee/SilentCursor#readme" target="_blank" rel="noopener">Documentation</a>.</p>
+      </div>
+    </section>
+  </main>
+
+  <footer class="footer">
+    <div class="container">
+      <p><span class="logo-inline">[NeoCursor]</span> — hands-free computing for developers.</p>
+      <p><a href="https://github.com/YehyunLee/NeoCursor" target="_blank" rel="noopener">GitHub</a> · <a href="https://github.com/YehyunLee/SilentCursor/issues" target="_blank" rel="noopener">Issues</a></p>
+    </div>
+  </footer>
+</body>
+</html>
