@@ -1,12 +1,32 @@
-require('dotenv').config();
-const { app, BrowserWindow, ipcMain, screen, globalShortcut } = require('electron');
+// Very first: log that main.js was entered (before any other require that might crash)
 const path = require('path');
+const fs = require('fs');
+const STARTUP_LOG = path.join(__dirname, 'silentcursor-startup.log');
+try { fs.appendFileSync(STARTUP_LOG, `[${new Date().toISOString()}] main.js ENTRY\n`); } catch (_) {}
+
+require('dotenv').config();
+const logStart = (msg) => {
+  const line = `[${new Date().toISOString()}] ${msg}\n`;
+  try { fs.appendFileSync(STARTUP_LOG, line); } catch (_) {}
+  process.stderr.write('[SilentCursor] ' + msg + '\n');
+};
+logStart('main.js loading...');
+const { app, BrowserWindow, ipcMain, screen, globalShortcut } = require('electron');
+
+// Reduce 0xC0000005 (access violation) on Windows: disable GPU acceleration and sandbox
+if (process.platform === 'win32') {
+  app.commandLine.appendSwitch('disable-gpu');
+  app.commandLine.appendSwitch('disable-gpu-sandbox');
+  app.commandLine.appendSwitch('no-sandbox');
+}
 const { spawn } = require('child_process');
 const server = require('./server');
+logStart('server required');
 const VSRHandler = require('./vsr-handler');
 const SpeechHandler = require('./speech-handler');
-const GoogleSpeechHandler = require('./google-speech-handler');
+// Defer loading google-speech-handler (pulls in @google-cloud/speech native bindings) to avoid crash on Windows at startup
 const CursorMonitor = require('./cursor-monitor');
+logStart('handlers required');
 
 let robot = null;
 let useNativeControl = false;
@@ -16,12 +36,20 @@ app.commandLine.appendSwitch('disable-renderer-backgrounding');
 app.commandLine.appendSwitch('disable-backgrounding-occluded-windows');
 app.commandLine.appendSwitch('disable-background-timer-throttling');
 
-try {
-  robot = require('robotjs');
-  console.log('Using robotjs for mouse control');
-} catch (error) {
-  console.warn('robotjs not available, using OS-specific fallback');
+// On Windows, do not load robotjs — it often crashes with 0xC0000005 (native access violation)
+// before any JS catch can run. Use the PowerShell cursor helper instead.
+if (process.platform === 'win32') {
   useNativeControl = true;
+  logStart('Windows: using PowerShell helper (robotjs skipped to avoid crash)');
+} else {
+  logStart('loading robotjs...');
+  try {
+    robot = require('robotjs');
+    logStart('robotjs OK');
+  } catch (error) {
+    logStart('robotjs not available, using fallback: ' + error.message);
+    useNativeControl = true;
+  }
 }
 
 // Persistent helper process for fast cursor control without robotjs
@@ -550,13 +578,15 @@ app.whenReady().then(() => {
   startCursorHelper();
   createWindow();
   createControlWindow();
-  
+  logStart('ready. Overlay + Control Panel opened. Ctrl+Shift+H = help.');
+
   // Initialize VSR handler
   vsrHandler = new VSRHandler();
   
   // Initialize Speech handlers
   speechHandler = new SpeechHandler();
   if (speechSettings.googleApiKey) {
+    const GoogleSpeechHandler = require('./google-speech-handler');
     googleSpeechHandler = new GoogleSpeechHandler(speechSettings.googleApiKey);
   }
   
@@ -771,8 +801,9 @@ ipcMain.handle('update-speech-settings', async (event, { engine, whisperModel, g
     if (whisperModel) speechSettings.whisperModel = whisperModel;
     if (googleApiKey !== undefined) {
       speechSettings.googleApiKey = googleApiKey;
-      // Reinitialize Google handler if API key changed
+      // Reinitialize Google handler if API key changed (lazy-load module)
       if (googleApiKey) {
+        const GoogleSpeechHandler = require('./google-speech-handler');
         googleSpeechHandler = new GoogleSpeechHandler(googleApiKey);
         googleSpeechHandler.onTranscriptReady = speechHandler.onTranscriptReady;
       } else {
