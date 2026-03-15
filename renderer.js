@@ -33,6 +33,8 @@ let vadIsSpeaking = false;
 let lastVoiceDetected = 0;
 let speechEngineRunning = false;
 let speechEngineStarting = false;
+let lastSpeechEngineUseTime = 0;
+const SPEECH_ENGINE_IDLE_TIMEOUT_MS = 20000;
 let speechEngineStopping = false;
 
 // Head tracking state (default 15 - synced with Control Panel)
@@ -49,7 +51,7 @@ const MANUAL_THRESHOLD = 20;  // pixels
 const MANUAL_PAUSE_DURATION = 1000;  // ms
 
 // Tracking box for iris mapping (relative to frame dimensions)
-const BOX_W_RATIO = 0.6;
+const BOX_W_RATIO = 0.6; 
 const BOX_H_RATIO = 0.6;
 const BOX_X_RATIO = 0.2;
 const BOX_Y_RATIO = 0.2;
@@ -994,6 +996,7 @@ async function ensureSpeechEngineStarted() {
     const result = await window.electronAPI.speechStart('base');
     if (result.success) {
       speechEngineRunning = true;
+      lastSpeechEngineUseTime = Date.now();
       console.log('[Speech] Engine engaged (voice detected)');
       updateSpeechMonitoringStatus();
     } else {
@@ -1016,6 +1019,7 @@ async function stopSpeechEngineInternal() {
     console.error('[Speech] Error stopping engine:', error);
   } finally {
     speechEngineRunning = false;
+    lastSpeechEngineUseTime = 0;
     speechEngineStopping = false;
     if (isSpeechActive) {
       updateSpeechMonitoringStatus();
@@ -1039,6 +1043,7 @@ function processAudioForVAD(inputData) {
       vadIsSpeaking = true;
       updateStatus(statusElements.speech, 'Voice detected…', '#4ecca3');
     }
+    lastSpeechEngineUseTime = now;
     ensureSpeechEngineStarted();
   }
 
@@ -1056,6 +1061,15 @@ function processAudioForVAD(inputData) {
   if (vadIsSpeaking && now - lastVoiceDetected > VAD_SILENCE_TIMEOUT_MS) {
     vadIsSpeaking = false;
     updateSpeechMonitoringStatus();
+  }
+
+  if (
+    speechEngineRunning &&
+    !vadIsSpeaking &&
+    lastSpeechEngineUseTime &&
+    now - lastSpeechEngineUseTime > SPEECH_ENGINE_IDLE_TIMEOUT_MS
+  ) {
+    console.log('[Speech] Idle timeout reached, stopping engine');
     stopSpeechEngineInternal();
   } else if (!speechEngineRunning && !speechEngineStarting) {
     updateSpeechMonitoringStatus();
