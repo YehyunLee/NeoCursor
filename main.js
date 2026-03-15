@@ -89,36 +89,86 @@ function startCursorHelper() {
   if (!useNativeControl && process.platform !== 'darwin') return;
 
   if (process.platform === 'win32') {
-    // MOUSEEVENTF_WHEEL=0x0800, MOUSEEVENTF_HWHEEL=0x1000; amount in cButtons (120 = one notch)
-    const psScript = [
-      "Add-Type -MemberDefinition '",
-      "[DllImport(\"user32.dll\")] public static extern bool SetCursorPos(int X, int Y);",
-      "[DllImport(\"user32.dll\")] public static extern void mouse_event(int f, int dx, int dy, int c, int i);",
-      "' -Name U32 -Namespace W;",
-      "while($true){",
-        "$l=[Console]::In.ReadLine();",
-        "if($l-eq$null){break}",
-        "$p=$l-split' ';",
-        "if($p[0]-eq'MOVE'-and$p.Length-ge3){[W.U32]::SetCursorPos([int]$p[1],[int]$p[2])|Out-Null}",
-        "elseif($p[0]-eq'SCROLL'-and$p.Length-ge3){",
-          "$dx=[int]$p[1];$dy=[int]$p[2];",
-          "if($dy-ne0){[W.U32]::mouse_event(0x0800,0,0,$dy,0)}",
-          "if($dx-ne0){[W.U32]::mouse_event(0x1000,0,0,$dx,0)}",
-        "}",
-        "elseif($p[0]-eq'CLICK'){",
-          "if($p.Length-ge2-and$p[1]-eq'right'){[W.U32]::mouse_event(8,0,0,0,0);Start-Sleep -m 30;[W.U32]::mouse_event(16,0,0,0,0)}",
-          "else{[W.U32]::mouse_event(2,0,0,0,0);Start-Sleep -m 30;[W.U32]::mouse_event(4,0,0,0,0)}",
-        "}",
-        "elseif($p[0]-eq'MOUSEDOWN'){",
-          "if($p.Length-ge2-and$p[1]-eq'right'){[W.U32]::mouse_event(8,0,0,0,0)}",
-          "else{[W.U32]::mouse_event(2,0,0,0,0)}",
-        "}",
-        "elseif($p[0]-eq'MOUSEUP'){",
-          "if($p.Length-ge2-and$p[1]-eq'right'){[W.U32]::mouse_event(16,0,0,0,0)}",
-          "else{[W.U32]::mouse_event(4,0,0,0,0)}",
-        "}",
-      "}"
-    ].join(' ');
+    // Use SendInput for scrolling so it targets the window under the cursor (works in Overleaf, Cursor panes, etc.)
+    // mouse_event is deprecated and doesn't always route to the correct window.
+    const psScript = `
+Add-Type -TypeDefinition @'
+using System;
+using System.Runtime.InteropServices;
+
+public struct MOUSEINPUT {
+    public int dx;
+    public int dy;
+    public int mouseData;
+    public int dwFlags;
+    public int time;
+    public IntPtr dwExtraInfo;
+}
+
+public struct INPUT {
+    public int type;
+    public MOUSEINPUT mi;
+}
+
+public struct POINT { public int X; public int Y; }
+
+public class WinInput {
+    [DllImport("user32.dll")] public static extern bool SetCursorPos(int X, int Y);
+    [DllImport("user32.dll")] public static extern bool GetCursorPos(out POINT pt);
+    [DllImport("user32.dll")] public static extern void mouse_event(int f, int dx, int dy, int c, int i);
+    [DllImport("user32.dll", SetLastError=true)] public static extern uint SendInput(uint n, INPUT[] inputs, int size);
+
+    public static void ScrollWheel(int amount) {
+        var inp = new INPUT();
+        inp.type = 0; // INPUT_MOUSE
+        inp.mi.dwFlags = 0x0800; // MOUSEEVENTF_WHEEL
+        inp.mi.mouseData = amount;
+        SendInput(1, new INPUT[]{inp}, Marshal.SizeOf(typeof(INPUT)));
+    }
+
+    public static void ScrollHWheel(int amount) {
+        var inp = new INPUT();
+        inp.type = 0;
+        inp.mi.dwFlags = 0x1000; // MOUSEEVENTF_HWHEEL
+        inp.mi.mouseData = amount;
+        SendInput(1, new INPUT[]{inp}, Marshal.SizeOf(typeof(INPUT)));
+    }
+}
+'@ -ErrorAction SilentlyContinue
+
+while($true){
+    $l=[Console]::In.ReadLine()
+    if($l-eq$null){break}
+    $p=$l-split' '
+    if($p[0]-eq'MOVE'-and$p.Length-ge3){[WinInput]::SetCursorPos([int]$p[1],[int]$p[2])|Out-Null}
+    elseif($p[0]-eq'SCROLL'-and$p.Length-ge3){
+        $dx=[int]$p[1];$dy=[int]$p[2]
+        if($dy-ne0){[WinInput]::ScrollWheel($dy)}
+        if($dx-ne0){[WinInput]::ScrollHWheel($dx)}
+    }
+    elseif($p[0]-eq'SCROLL_AT'-and$p.Length-ge5){
+        $sx=[int]$p[1];$sy=[int]$p[2];$dx=[int]$p[3];$dy=[int]$p[4]
+        $cur=New-Object POINT
+        [WinInput]::GetCursorPos([ref]$cur)|Out-Null
+        [WinInput]::SetCursorPos($sx,$sy)|Out-Null
+        if($dy-ne0){[WinInput]::ScrollWheel($dy)}
+        if($dx-ne0){[WinInput]::ScrollHWheel($dx)}
+        [WinInput]::SetCursorPos($cur.X,$cur.Y)|Out-Null
+    }
+    elseif($p[0]-eq'CLICK'){
+        if($p.Length-ge2-and$p[1]-eq'right'){[WinInput]::mouse_event(8,0,0,0,0);Start-Sleep -m 30;[WinInput]::mouse_event(16,0,0,0,0)}
+        else{[WinInput]::mouse_event(2,0,0,0,0);Start-Sleep -m 30;[WinInput]::mouse_event(4,0,0,0,0)}
+    }
+    elseif($p[0]-eq'MOUSEDOWN'){
+        if($p.Length-ge2-and$p[1]-eq'right'){[WinInput]::mouse_event(8,0,0,0,0)}
+        else{[WinInput]::mouse_event(2,0,0,0,0)}
+    }
+    elseif($p[0]-eq'MOUSEUP'){
+        if($p.Length-ge2-and$p[1]-eq'right'){[WinInput]::mouse_event(16,0,0,0,0)}
+        else{[WinInput]::mouse_event(4,0,0,0,0)}
+    }
+}
+`;
 
     cursorHelper = spawn('powershell', [
       '-NoProfile', '-NoLogo', '-ExecutionPolicy', 'Bypass', '-Command', psScript
@@ -206,6 +256,14 @@ function sendScroll(dx, dy) {
   // macOS scroll is handled by robotjs in the scroll IPC handler
 }
 
+function sendScrollAt(x, y, dx, dy) {
+  if (cursorHelper && cursorHelper.stdin) {
+    cursorHelper.stdin.write(`SCROLL_AT ${x} ${y} ${dx} ${dy}\n`);
+  } else {
+    sendScroll(dx, dy);
+  }
+}
+
 function sendCursorClick(button) {
   if (cursorHelper && cursorHelper.stdin) {
     cursorHelper.stdin.write(`CLICK ${button}\n`);
@@ -240,7 +298,7 @@ let activeSpeechEngine = 'whisper'; // 'whisper' or 'google'
 
 const initialGoogleKey = process.env.GOOGLE_SPEECH_API_KEY || null;
 let speechSettings = {
-  engine: initialGoogleKey ? 'google' : 'whisper',
+  engine: 'google',  // Default to Google Cloud when available
   whisperModel: 'base',
   googleApiKey: initialGoogleKey
 };
@@ -250,6 +308,7 @@ function createControlWindow() {
     width: 600,
     height: 800,
     title: 'SilentCursor Control Panel',
+    alwaysOnTop: true,
     webPreferences: {
       preload: path.join(__dirname, 'preload.js'),
       nodeIntegration: false,
@@ -257,11 +316,11 @@ function createControlWindow() {
     }
   });
 
-  controlsWindow.loadFile('controls.html');
-  // Open DevTools in development
-  if (process.env.NODE_ENV === 'development') {
-    controlsWindow.webContents.openDevTools();
-  }
+  controlsWindow.loadFile(path.join(__dirname, 'controls.html'));
+  controlsWindow.setAlwaysOnTop(true, 'screen-saver');
+  controlsWindow.focus();
+  // Always open DevTools so we can see button click logs and errors
+  controlsWindow.webContents.openDevTools({ mode: 'detach' });
 
   controlsWindow.on('closed', () => {
     controlsWindow = null;
@@ -294,12 +353,10 @@ function createWindow() {
     }
   });
   
-  // Set window to ignore mouse events except on interactive regions
+  // Set window to ignore mouse events so clicks pass through to windows below (e.g. Control Panel)
   mainWindow.setIgnoreMouseEvents(true, { forward: true });
-  
-  // Ensure window stays on top even when other apps are in fullscreen
-  // Use 'screen-saver' level so overlay appears over macOS full screen spaces
-  mainWindow.setAlwaysOnTop(true, 'screen-saver');
+  // Use 'floating' so Control Panel (screen-saver level) stays on top and receives clicks
+  mainWindow.setAlwaysOnTop(true, 'floating');
   mainWindow.setVisibleOnAllWorkspaces(true, { visibleOnFullScreen: true });
   
   // Additional setting to ensure visibility over fullscreen apps
@@ -329,11 +386,19 @@ function createWindow() {
   });
 }
 
+ipcMain.on('quit-app', () => {
+  app.quit();
+});
+
 // IPC for Control Panel <-> Overlay communication
 ipcMain.on('control-command', (event, { command, value }) => {
-  // Forward command to overlay window
-  if (mainWindow && mainWindow.webContents) {
-    mainWindow.webContents.send('control-command', { command, value });
+  if (!mainWindow || !mainWindow.webContents) return;
+  mainWindow.webContents.send('control-command', { command, value });
+  // Fallback: run stop/start directly in overlay in case IPC listener didn't run (e.g. remote load)
+  if (command === 'stop-tracking') {
+    mainWindow.webContents.executeJavaScript('typeof window.__stopTracking==="function"&&window.__stopTracking()').catch(() => {});
+  } else if (command === 'start-tracking') {
+    mainWindow.webContents.executeJavaScript('typeof window.__startTracking==="function"&&window.__startTracking()').catch(() => {});
   }
 });
 
@@ -491,11 +556,26 @@ ipcMain.handle('scroll', async (event, { dx, dy }) => {
       robot.scrollMouse(Math.round(dx / 30), scrollAmount);
       console.log(`[Scroll] robotjs scroll: dx=${dx}, dy=${dy}, amount=${scrollAmount}`);
     } else if (useNativeControl) {
+      // Pass values directly - the PowerShell SendInput expects wheel amounts in multiples of 120
       sendScroll(Math.round(dx), Math.round(dy));
     }
     return { success: true };
   } catch (error) {
     console.error('Error scrolling:', error);
+    return { success: false, error: error.message };
+  }
+});
+
+ipcMain.handle('scroll-at', async (event, { x, y, dx, dy }) => {
+  try {
+    if (x != null && y != null && useNativeControl && process.platform === 'win32') {
+      sendScrollAt(Math.round(x), Math.round(y), Math.round(dx), Math.round(dy));
+    } else {
+      sendScroll(Math.round(dx), Math.round(dy));
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('Error scrollAt:', error);
     return { success: false, error: error.message };
   }
 });
@@ -588,6 +668,9 @@ app.whenReady().then(() => {
   if (speechSettings.googleApiKey) {
     const GoogleSpeechHandler = require('./google-speech-handler');
     googleSpeechHandler = new GoogleSpeechHandler(speechSettings.googleApiKey);
+  } else {
+    // Fall back to Whisper if Google API key not configured
+    speechSettings.engine = 'whisper';
   }
   
   // Initialize cursor monitor to detect text input mode
