@@ -35,19 +35,8 @@
       overflow-y: auto;
     }
 
-    h1 {
-      font-size: 1.5rem;
-      text-transform: uppercase;
-      margin-bottom: 0.5rem;
-    }
-
-    h2 {
-      font-size: 1.1rem;
-      color: var(--accent);
-      margin-bottom: 1rem;
-      text-transform: uppercase;
-      letter-spacing: 0.05em;
-    }
+    h1 { font-size: 1.5rem; text-transform: uppercase; margin-bottom: 0.5rem; }
+    h2 { font-size: 1.1rem; color: var(--accent); margin-bottom: 1rem; text-transform: uppercase; letter-spacing: 0.05em; }
 
     .section {
       background: var(--bg-secondary);
@@ -57,30 +46,10 @@
       border-radius: 8px;
     }
 
-    .control-group {
-      margin-bottom: 1rem;
-    }
-
-    label {
-      display: block;
-      margin-bottom: 0.5rem;
-      color: var(--muted);
-      font-size: 0.9rem;
-    }
-
-    input[type="range"] {
-      width: 100%;
-      accent-color: var(--accent);
-    }
-
-    select {
-      width: 100%;
-      padding: 0.5rem;
-      background: var(--bg);
-      border: 1px solid var(--border-dim);
-      color: var(--text);
-      border-radius: 4px;
-    }
+    .control-group { margin-bottom: 1rem; }
+    label { display: block; margin-bottom: 0.5rem; color: var(--muted); font-size: 0.9rem; }
+    input[type="range"] { width: 100%; accent-color: var(--accent); }
+    select { width: 100%; padding: 0.5rem; background: var(--bg); border: 1px solid var(--border-dim); color: var(--text); border-radius: 4px; }
 
     button {
       padding: 0.75rem 1.5rem;
@@ -93,65 +62,19 @@
       width: 100%;
       margin-bottom: 0.5rem;
       transition: all 0.2s;
-    }
-
-    button:hover {
-      opacity: 0.9;
-      transform: translateY(-1px);
-    }
-
-    button.secondary {
-      background: transparent;
-      color: var(--accent);
-    }
-
-    button.danger {
-      background: var(--danger);
-      border-color: var(--danger);
-      color: white;
-    }
-
-    .help-grid {
-      display: grid;
-      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
-      gap: 1rem;
-    }
-
-    .help-item {
-      background: rgba(255, 255, 255, 0.03);
-      padding: 1rem;
-      border-left: 2px solid var(--accent);
-    }
-
-    .help-item h3 {
-      font-size: 0.9rem;
-      color: var(--accent-secondary);
-      margin-bottom: 0.5rem;
-    }
-
-    .help-item p {
+      font-family: 'Space Grotesk', sans-serif;
       font-size: 0.85rem;
-      color: var(--text-secondary);
-      line-height: 1.4;
     }
+    button:hover { opacity: 0.9; transform: translateY(-1px); }
+    button.secondary { background: transparent; color: var(--accent); }
+    button.danger { background: var(--danger); border-color: var(--danger); color: white; }
 
-    .status-bar {
-      position: fixed;
-      bottom: 0;
-      left: 0;
-      right: 0;
-      background: var(--bg-secondary);
-      border-top: 1px solid var(--border-dim);
-      padding: 0.75rem 2rem;
-      display: flex;
-      justify-content: space-between;
-      font-size: 0.85rem;
-      color: var(--muted);
-    }
-
-    #connection-status {
-      color: var(--accent);
-    }
+    .help-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(200px, 1fr)); gap: 1rem; }
+    .help-item { background: rgba(255, 255, 255, 0.03); padding: 1rem; border-left: 2px solid var(--accent); }
+    .help-item h3 { font-size: 0.9rem; color: var(--accent-secondary); margin-bottom: 0.5rem; }
+    .help-item p { font-size: 0.85rem; color: var(--text-secondary); line-height: 1.4; }
+    #connection-status { color: var(--accent); }
+    #debug-log { color: #f39c12; font-size: 0.75rem; margin-top: 0.5rem; min-height: 1.2em; }
   </style>
 </head>
 <body>
@@ -160,28 +83,31 @@
       <h1>Silent Cursor</h1>
       <p style="color: var(--muted)">Control Panel</p>
     </div>
-    <div id="connection-status">Connected to Overlay</div>
+    <div id="connection-status">Waiting for overlay...</div>
   </div>
 
   <div class="section">
     <h2>Actions & Tracking</h2>
+    <div id="debug-log"></div>
     <button id="btn-toggle-tracking">Stop Tracking</button>
     <button id="btn-recenter" class="secondary">Recenter Cursor</button>
     <button id="btn-toggle-video" class="secondary">Toggle Camera Preview</button>
     <button id="btn-toggle-speech" class="secondary">Toggle Voice Control</button>
+    <button id="btn-quit" class="danger">Quit SilentCursor</button>
   </div>
 
   <div class="section">
     <h2>Settings</h2>
     <div class="control-group">
       <label>Cursor Sensitivity: <span id="val-sensitivity">15</span></label>
-      <input type="range" id="inp-sensitivity" min="1" max="50" value="15">
+      <input type="range" id="inp-sensitivity" min="1" max="50" value="15"
+             oninput="document.getElementById('val-sensitivity').textContent = this.value">
     </div>
     <div class="control-group">
       <label>Speech Engine</label>
       <select id="sel-speech-engine">
-        <option value="whisper">Faster-Whisper (Offline)</option>
         <option value="google">Google Speech-to-Text v2</option>
+        <option value="whisper">Faster-Whisper (Offline)</option>
       </select>
     </div>
   </div>
@@ -217,6 +143,127 @@
     </div>
   </div>
 
-  <script src="controls-renderer.js"></script>
+  <script>
+  // ALL control panel logic is inline to guarantee it runs
+  (function() {
+    var api = window.electronAPI;
+    var debugEl = document.getElementById('debug-log');
+
+    function log(msg) {
+      console.log('[CP] ' + msg);
+      if (debugEl) debugEl.textContent = msg;
+    }
+
+    if (!api) {
+      log('ERROR: electronAPI not available! Preload did not load.');
+      return;
+    }
+    log('electronAPI loaded OK');
+
+    // --- Sensitivity slider (pure DOM, no IPC needed for display) ---
+    var slider = document.getElementById('inp-sensitivity');
+    var valSpan = document.getElementById('val-sensitivity');
+    // The oninput attribute already handles display updates.
+    // This sends the value to the overlay:
+    if (slider) {
+      slider.addEventListener('input', function() {
+        var v = parseInt(this.value, 10);
+        if (api.sendControlCommand) api.sendControlCommand('set-sensitivity', v);
+      });
+    }
+
+    // --- Speech engine ---
+    var selEngine = document.getElementById('sel-speech-engine');
+    if (selEngine) {
+      selEngine.addEventListener('change', function() {
+        api.updateSpeechSettings({ engine: this.value });
+      });
+    }
+
+    // --- Buttons ---
+    var btnTrack = document.getElementById('btn-toggle-tracking');
+    var btnRecenter = document.getElementById('btn-recenter');
+    var btnVideo = document.getElementById('btn-toggle-video');
+    var btnSpeech = document.getElementById('btn-toggle-speech');
+    var btnQuit = document.getElementById('btn-quit');
+
+    if (btnTrack) {
+      btnTrack.addEventListener('click', function() {
+        var shouldStop = this.textContent.trim().toLowerCase().indexOf('stop') === 0;
+        var cmd = shouldStop ? 'stop-tracking' : 'start-tracking';
+        log('Clicked: ' + cmd);
+        api.sendControlCommand(cmd);
+      });
+    }
+
+    if (btnRecenter) {
+      btnRecenter.addEventListener('click', function() {
+        log('Clicked: recenter');
+        api.sendControlCommand('recenter');
+      });
+    }
+
+    if (btnVideo) {
+      btnVideo.addEventListener('click', function() {
+        log('Clicked: toggle-video');
+        api.sendControlCommand('toggle-video');
+      });
+    }
+
+    if (btnSpeech) {
+      btnSpeech.addEventListener('click', function() {
+        log('Clicked: toggle-speech');
+        api.sendControlCommand('toggle-speech');
+      });
+    }
+
+    if (btnQuit) {
+      btnQuit.addEventListener('click', function() {
+        log('Clicked: quit');
+        api.quitApp();
+      });
+    }
+
+    // --- Status updates from overlay ---
+    var statusConn = document.getElementById('connection-status');
+    var sensitivitySynced = false;
+
+    function updateUI(status) {
+      if (statusConn) {
+        statusConn.textContent = 'Connected to Overlay';
+        statusConn.style.color = 'var(--accent)';
+      }
+      if (status.isTracking !== undefined && btnTrack) {
+        btnTrack.textContent = status.isTracking ? 'Stop Tracking' : 'Start Tracking';
+        btnTrack.className = status.isTracking ? 'danger' : '';
+        if (btnRecenter) btnRecenter.disabled = !status.isTracking;
+        if (btnVideo) btnVideo.disabled = !status.isTracking;
+      }
+      // Only sync sensitivity from overlay once at startup
+      if (status.sensitivity !== undefined && !sensitivitySynced) {
+        sensitivitySynced = true;
+        if (slider) slider.value = status.sensitivity;
+        if (valSpan) valSpan.textContent = String(status.sensitivity);
+      }
+      if (status.videoVisible !== undefined && btnVideo) {
+        btnVideo.textContent = status.videoVisible ? 'Hide Camera Preview' : 'Show Camera Preview';
+      }
+      if (status.speechActive !== undefined && btnSpeech) {
+        btnSpeech.textContent = status.speechActive ? 'Disable Voice Control' : 'Enable Voice Control';
+      }
+    }
+
+    // Listen for status
+    if (api.onOverlayStatus) api.onOverlayStatus(updateUI);
+    if (api.requestOverlayStatus) api.requestOverlayStatus();
+
+    // Load speech engine setting
+    if (api.getSpeechSettings) {
+      api.getSpeechSettings().then(function(res) {
+        if (res && res.success && selEngine) selEngine.value = res.settings.engine;
+      }).catch(function() {});
+    }
+  })();
+  </script>
 </body>
 </html>

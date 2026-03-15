@@ -6,6 +6,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   mouseDown: (button = 'left') => ipcRenderer.invoke('mouse-down', { button }),
   mouseUp: (button = 'left') => ipcRenderer.invoke('mouse-up', { button }),
   scroll: (dx, dy) => ipcRenderer.invoke('scroll', { dx, dy }),
+  scrollAt: (x, y, dx, dy) => ipcRenderer.invoke('scroll-at', { x, y, dx, dy }),
   getScreenBounds: () => ipcRenderer.invoke('get-screen-bounds'),
   setFullscreen: (fullscreen) => ipcRenderer.invoke('set-fullscreen', { fullscreen }),
   altTab: (direction) => ipcRenderer.invoke('alt-tab', { direction }),
@@ -25,6 +26,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   
   // Control Panel <-> Overlay Communication
   sendControlCommand: (command, value) => ipcRenderer.send('control-command', { command, value }),
+  quitApp: () => ipcRenderer.send('quit-app'),
   requestOverlayStatus: () => ipcRenderer.send('request-overlay-status'),
   onControlCommand: (callback) => ipcRenderer.on('control-command', (event, { command, value }) => callback(command, value)),
   sendOverlayStatus: (status) => ipcRenderer.send('overlay-status-update', status),
