@@ -36,7 +36,7 @@ let speechEngineStarting = false;
 let speechEngineStopping = false;
 
 // Head tracking state
-let sensitivity = 15;
+let sensitivity = 5;
 
 // Cursor smoothing with exponential moving average
 const ALPHA_POS = 0.2;  // Smoothing factor for cursor position
