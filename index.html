@@ -296,10 +296,13 @@
       border-left: 4px solid var(--accent);
       box-shadow: 6px 6px 0 rgba(0, 0, 0, 0.5), 0 0 20px rgba(0, 255, 200, 0.3);
       z-index: 1000;
-      display: block;
+      display: none;
       background: #000;
       clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
       pointer-events: auto;
+    }
+    #video-container.visible {
+      display: block;
     }
 
     .input_video,
@@ -536,14 +539,14 @@
 
     <section class="controls-panel">
       <div class="sensitivity solo">
-        <label for="sensitivity-slider">Sensitivity • <span id="sensitivity-value">5</span></label>
-        <input type="range" id="sensitivity-slider" min="1" max="30" value="5">
+        <label for="sensitivity-slider">Sensitivity • <span id="sensitivity-value">15</span></label>
+        <input type="range" id="sensitivity-slider" min="1" max="30" value="15">
       </div>
       <div class="sensitivity solo">
         <label for="speech-engine-select">Speech Engine</label>
         <select id="speech-engine-select" style="flex: 1; padding: 0.5rem 0.75rem; background: var(--panel); color: var(--text); border: 1px solid var(--border-dim); border-left: 2px solid var(--accent); font-family: 'Space Grotesk', sans-serif; cursor: pointer; box-shadow: 2px 2px 0 rgba(0, 0, 0, 0.2); clip-path: polygon(0 0, calc(100% - 4px) 0, 100% 4px, 100% 100%, 0 100%);">
-          <option value="whisper">Faster-Whisper (Offline)</option>
           <option value="google">Google Speech-to-Text v2</option>
+          <option value="whisper">Faster-Whisper (Offline)</option>
         </select>
       </div>
       <div class="controls">
