@@ -1,17 +1,10 @@
-# Neo Cursor
+# NeoCursor
 
 ## Problem Statement
-Whether you're immersed in a coding session or writing a long-form text, the repetitive nature of typing, clicking, or even talking can become tiresome. Conventional speech-to-text solutions still demand the user to talk, and talking itself becomes a tedious and impractical process. There's a pressing need for a more relaxed and effortless way to use computers, a way that doesn't impede productivity.
+Whether you're immersed in a coding session or writing long-form text, the repetitive nature of typing and clicking can cause strain and fatigue. Traditional mouse and keyboard interfaces lead to RSI (repetitive strain injury) and limit accessibility for users with mobility impairments. There's a pressing need for a more natural and effortless way to use computers that doesn't impede productivity.
 
 ## Solution
-Neo Cursor provides the ultimate hands-free computing 
-experience using computer vision-based mouse control 
-and silent speech input. This desktop application, 
-developed using computer vision, visual speech 
-recognition, and large language model technologies, 
-allows users to interact with computer interfaces 
-using their eyes and talk silently to type, without 
-the need for physical movement or verbalization.
+NeoCursor provides a hands-free computing experience using eye-tracking and voice control. This desktop application, developed using computer vision, speech recognition, and AI technologies, allows users to control their cursor with their gaze, click with eye blinks, and dictate text naturally—all using just a standard webcam and microphone.
 
 **Platforms:** Windows, macOS (Linux partially supported).
 
@@ -21,11 +14,11 @@ the need for physical movement or verbalization.
 
 1. **Install & run**  
    - Clone the repo, run `npm install`, then `npm start`.  
-   - Or download the installer from the [website](https://github.com/YehyunLee/SilentCursor) / [Releases](https://github.com/YehyunLee/SilentCursor/releases).
+   - Or download the installer from the [website](https://neo-cursor.netlify.app) / [Releases](https://github.com/YehyunLee/NeoCursor/releases).
 
 2. **Allow camera access** when the app asks. Use the **Control Panel** window to start tracking, adjust sensitivity, and choose the speech engine.
 
-3. **Optional:** Add a Google Speech-to-Text API key (and optionally a Gemini API key for transcript improvement) in a `.env` file — see `.env.example`.
+3. **Optional:** Configure your Google Speech-to-Text API key in the Control Panel Settings (or use Faster-Whisper for offline speech recognition). For development, you can also use a `.env` file — see `.env.example`.
 
 ---
 
@@ -39,19 +32,9 @@ the need for physical movement or verbalization.
 | **Recenter Cursor** | Re-center the cursor from current gaze (available when tracking is on). |
 | **Toggle Camera Preview** | Show or hide the camera feed in the overlay corner. |
 | **Toggle Voice Control** | Enable or disable speech-to-text (Google or Whisper). |
-| **Quit SilentCursor** | Exit the app (overlay has no title bar; use this or system quit). |
+| **Quit NeoCursor** | Exit the app (overlay has no title bar; use this or system quit). |
 | **Cursor Sensitivity** | Slider 1–50; higher = faster cursor movement. |
 | **Speech Engine** | Google Speech-to-Text v2 or Faster-Whisper (offline). |
-
----
-
-### Keyboard
-
-| Shortcut | Action |
-|----------|--------|
-| **Hold Z** | Scroll mode: head movement scrolls instead of moving the cursor. Release Z to exit. |
-| **Ctrl+Shift+H** | Referenced in console as help; gesture guide is in the Control Panel. |
-| **Quit** | Use Control Panel → “Quit SilentCursor” (or system shortcut e.g. Alt+F4 / Cmd+Q where applicable). |
 
 ---
 
@@ -115,10 +98,13 @@ Speech is gated by simple VAD (voice activity); while the app thinks you’re sp
 
 ## Configuration
 
-- **`.env`** (optional):  
-  - `GOOGLE_SPEECH_API_KEY` — for Google Speech-to-Text.  
-  - `GEMINI_API_KEY` — for LLM-based transcript improvement.  
-- **Control Panel** — sensitivity, speech engine, and toggles.
+- **Control Panel Settings**:  
+  - Configure Google Speech API key directly in the app (Settings section)
+  - Choose between Google Speech-to-Text (cloud) or Faster-Whisper (offline)
+  - Adjust cursor sensitivity (1-50)
+- **`.env`** (optional for development):  
+  - `GOOGLE_SPEECH_API_KEY` — for Google Speech-to-Text
+  - `GEMINI_API_KEY` — for LLM-based transcript improvement
 
 ---
 
