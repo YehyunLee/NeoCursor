@@ -23,6 +23,7 @@ contextBridge.exposeInMainWorld('electronAPI', {
   pasteClipboard: () => ipcRenderer.invoke('paste-clipboard'),
   getCursorPosition: () => ipcRenderer.invoke('get-cursor-position'),
   rephraseText: (text) => ipcRenderer.invoke('rephrase-text', { text }),
+  setOverlayMousePassthrough: (passthrough) => ipcRenderer.invoke('set-overlay-mouse-passthrough', { passthrough }),
   onSpeechTranscript: (callback) => ipcRenderer.on('speech-transcript', (event, transcript) => callback(transcript)),
   onTextModeChanged: (callback) => ipcRenderer.on('text-mode-changed', (event, isTextMode) => callback(isTextMode)),
   

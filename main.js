@@ -803,6 +803,18 @@ ipcMain.handle('update-speech-settings', async (event, { engine, whisperModel, g
   }
 });
 
+ipcMain.handle('set-overlay-mouse-passthrough', async (event, { passthrough }) => {
+  try {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      mainWindow.setIgnoreMouseEvents(!!passthrough, { forward: true });
+    }
+    return { success: true };
+  } catch (error) {
+    console.error('[Overlay] Failed to toggle mouse passthrough:', error);
+    return { success: false, error: error.message };
+  }
+});
+
 // Get cursor position
 ipcMain.handle('get-cursor-position', async () => {
   try {
@@ -827,7 +839,7 @@ ipcMain.handle('rephrase-text', async (event, { text }) => {
 
     const { GoogleGenerativeAI } = require('@google/generative-ai');
     const genAI = new GoogleGenerativeAI(geminiApiKey);
-    const model = genAI.getGenerativeModel({ model: 'gemini-pro' });
+    const model = genAI.getGenerativeModel({ model: 'gemini-2.5-flash' });
 
     const prompt = `Please rephrase and clean up the following speech-to-text transcript. Fix any grammar issues, remove filler words, and make it more concise and professional while preserving the original meaning. Only return the rephrased text without any additional commentary:\n\n${text}`;
 

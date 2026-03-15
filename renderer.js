@@ -42,9 +42,10 @@ let transcriptBox = null;
 let transcriptContent = null;
 let transcriptText = '';
 let transcriptBoxVisible = false;
+let overlayMousePassthrough = true;
 
 // Head tracking state
-let sensitivity = 5;
+let sensitivity = 15;
 
 // Cursor smoothing with exponential moving average
 const ALPHA_POS = 0.2;  // Smoothing factor for cursor position
@@ -87,6 +88,16 @@ function accelerate(delta) {
   if (abs < 0.18) return sign * abs * 0.6;                      // finer control near rest
   if (abs < 0.45) return sign * (0.108 + (abs - 0.18) * 0.95);   // gentler ramp
   return sign * (0.378 + (abs - 0.45) * 1.4);                    // cap large jumps
+}
+
+function setOverlayMousePassthrough(shouldPassthrough) {
+  if (overlayMousePassthrough === shouldPassthrough) {
+    return;
+  }
+  overlayMousePassthrough = shouldPassthrough;
+  window.electronAPI.setOverlayMousePassthrough(shouldPassthrough).catch((err) => {
+    console.error('[Overlay] Failed to toggle mouse passthrough:', err);
+  });
 }
 
 const statusElements = { eye: null, speech: null, vsr: null, calibration: null, click: null, scroll: null, drag: null };
@@ -643,6 +654,17 @@ window.addEventListener('load', () => {
   const transcriptRephrase = document.getElementById('transcript-rephrase');
   const transcriptSubmit = document.getElementById('transcript-submit');
   
+  if (transcriptBox) {
+    transcriptBox.addEventListener('mouseenter', () => {
+      setOverlayMousePassthrough(false);
+    });
+    transcriptBox.addEventListener('mouseleave', () => {
+      if (transcriptBoxVisible) {
+        setOverlayMousePassthrough(true);
+      }
+    });
+  }
+
   if (transcriptClear) {
     transcriptClear.addEventListener('click', () => {
       transcriptText = '';
@@ -1090,8 +1112,15 @@ async function stopSpeech() {
 function showTranscriptBox(x, y) {
   if (!transcriptBox) return;
   
-  transcriptBox.style.left = `${x + 20}px`;
-  transcriptBox.style.top = `${y + 20}px`;
+  const OFFSET = 20;
+  const { innerWidth, innerHeight } = window;
+  const rect = transcriptBox.getBoundingClientRect();
+  const width = rect.width || 320;
+  const height = rect.height || 200;
+  const targetX = Math.min(Math.max(0, x + OFFSET), innerWidth - width - OFFSET);
+  const targetY = Math.min(Math.max(0, y + OFFSET), innerHeight - height - OFFSET);
+  transcriptBox.style.left = `${targetX}px`;
+  transcriptBox.style.top = `${targetY}px`;
   transcriptBox.style.display = 'block';
   transcriptBoxVisible = true;
 }
@@ -1103,6 +1132,7 @@ function hideTranscriptBox() {
   transcriptBoxVisible = false;
   transcriptText = '';
   if (transcriptContent) transcriptContent.textContent = '';
+  setOverlayMousePassthrough(true);
 }
 
 function addToTranscript(text) {
@@ -1154,6 +1184,11 @@ async function submitTranscript() {
   if (!transcriptText.trim()) return;
   
   try {
+    // Click at current cursor position to focus the target before typing
+    await window.electronAPI.mouseClick('left');
+    // Small delay to ensure click is processed
+    await new Promise(resolve => setTimeout(resolve, 100));
+    
     await window.electronAPI.typeText(transcriptText);
     console.log('[Transcript] Submitted:', transcriptText);
     hideTranscriptBox();
