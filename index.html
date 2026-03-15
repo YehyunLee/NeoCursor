@@ -493,6 +493,106 @@
       box-shadow: 0 0 30px rgba(168, 85, 247, 0.5), inset 0 0 20px rgba(168, 85, 247, 0.1);
     }
 
+    /* Help overlay - same visual language as action-feedback */
+    #help-overlay {
+      position: fixed;
+      inset: 0;
+      background: rgba(10, 11, 15, 0.92);
+      backdrop-filter: blur(8px);
+      z-index: 20000;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 2rem;
+      opacity: 0;
+      visibility: hidden;
+      transition: opacity 0.2s ease, visibility 0.2s ease;
+      pointer-events: none;
+    }
+
+    #help-overlay.show {
+      opacity: 1;
+      visibility: visible;
+      pointer-events: auto;
+    }
+
+    #help-panel {
+      background: rgba(18, 20, 26, 0.98);
+      border: 3px solid var(--accent);
+      border-left: 6px solid var(--accent);
+      box-shadow: 0 0 40px rgba(0, 255, 200, 0.25), inset 0 0 20px rgba(0, 255, 200, 0.06);
+      clip-path: polygon(0 0, calc(100% - 12px) 0, 100% 12px, 100% 100%, 0 100%);
+      max-width: 520px;
+      max-height: 85vh;
+      overflow-y: auto;
+      padding: 2rem 2.25rem;
+    }
+
+    #help-panel h2 {
+      font-size: 1.5rem;
+      color: var(--accent);
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      margin-bottom: 1.25rem;
+      padding-bottom: 0.5rem;
+      border-bottom: 1px solid var(--border);
+    }
+
+    #help-panel h3 {
+      font-size: 0.75rem;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.12em;
+      margin: 1.25rem 0 0.5rem;
+    }
+
+    #help-panel h3:first-of-type {
+      margin-top: 0;
+    }
+
+    #help-panel ul, #help-panel p {
+      font-size: 0.9rem;
+      color: var(--text-secondary);
+      line-height: 1.6;
+      margin: 0 0 0.5rem;
+      padding-left: 1.25rem;
+    }
+
+    #help-panel ul {
+      list-style: none;
+      padding-left: 1.25rem;
+    }
+
+    #help-panel li {
+      margin-bottom: 0.35rem;
+      position: relative;
+    }
+
+    #help-panel li::before {
+      content: '·';
+      position: absolute;
+      left: -1rem;
+      color: var(--accent);
+      font-weight: 700;
+    }
+
+    #help-panel kbd {
+      background: var(--panel);
+      border: 1px solid var(--border-dim);
+      padding: 0.15em 0.45em;
+      font-family: inherit;
+      font-size: 0.85em;
+      color: var(--accent);
+      border-radius: 2px;
+    }
+
+    #help-close {
+      margin-top: 1.75rem;
+      width: 100%;
+      padding: 0.85rem 1.5rem;
+      font-size: 0.85rem;
+    }
+
     @media (max-width: 720px) {
       body {
         padding: 2rem 1.5rem;
@@ -624,6 +724,52 @@
 
   <!-- Action feedback overlay -->
   <div id="action-feedback"></div>
+
+  <!-- Help overlay (Ctrl+Shift+H / Cmd+Shift+H); focus trapped until "I understand" -->
+  <div id="help-overlay" role="dialog" aria-modal="true" aria-label="Shortcuts and gestures help">
+    <div id="help-panel">
+      <h2>SilentCursor — Quick reference</h2>
+
+      <h3>Keyboard</h3>
+      <ul>
+        <li><kbd>Ctrl+Q</kbd> / <kbd>Cmd+Q</kbd> — Quit (overlay has no title bar)</li>
+        <li><kbd>Ctrl+R</kbd> / <kbd>Cmd+R</kbd> — Toggle VSR (lip reading) recording</li>
+        <li><kbd>Ctrl+Shift+H</kbd> / <kbd>Cmd+Shift+H</kbd> — Show this help; from another app, brings the overlay back to front</li>
+      </ul>
+
+      <h3>Gaze edges (hold ~800 ms)</h3>
+      <ul>
+        <li><strong>Top bar</strong> — Scroll up</li>
+        <li><strong>Bottom bar</strong> — Scroll down</li>
+        <li><strong>Left bar</strong> — App back (Alt+Shift+Tab)</li>
+        <li><strong>Right bar</strong> — App next (Alt+Tab)</li>
+      </ul>
+
+      <h3>Eyes & blinks</h3>
+      <ul>
+        <li><strong>Left blink</strong> — Left click</li>
+        <li><strong>Left wink hold 1.5 s</strong> — Start drag; blink again to release</li>
+        <li><strong>Left wink hold 1.5 s</strong> (when not dragging) — Copy selection</li>
+        <li><strong>Right blink</strong> — Right click</li>
+        <li><strong>Right wink hold 1.5 s</strong> — Paste from clipboard</li>
+      </ul>
+
+      <h3>Head & scroll mode</h3>
+      <ul>
+        <li><strong>Move head</strong> — Move cursor (when not in scroll mode)</li>
+        <li><strong>Hold Z</strong> — Enter scroll mode (head scrolls instead of moving cursor)</li>
+        <li><strong>Release Z</strong> — Exit scroll mode</li>
+      </ul>
+
+      <h3>Speech & VSR</h3>
+      <ul>
+        <li><kbd>Ctrl+R</kbd> / <kbd>Cmd+R</kbd> — Start/stop VSR; lip-reading is typed into focused field</li>
+        <li><strong>Voice</strong> (when speech engine is on) — Speech-to-text is typed into focused field</li>
+      </ul>
+
+      <button id="help-close" type="button">I understand</button>
+    </div>
+  </div>
 
   <script src="mediapipe/camera_utils.js" crossorigin="anonymous"></script>
   <script src="mediapipe/face_mesh.js" crossorigin="anonymous"></script>

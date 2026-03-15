@@ -16,6 +16,7 @@ SilentCursor provides the ultimate hands-free computing experience using compute
 |----------|--------|
 | **Ctrl+Q** (Windows/Linux) / **Cmd+Q** (macOS) | Quit the app (overlay has no title bar) |
 | **Ctrl+R** / **Cmd+R** | Toggle VSR (visual speech recognition) recording |
+| **Ctrl+Shift+H** / **Cmd+Shift+H** | Show help (shortcuts & gestures reference) |
 
 ### Gaze triggers (hold gaze on edge bar ~800 ms)
 

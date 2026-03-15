@@ -712,6 +712,61 @@ window.addEventListener('load', () => {
     toggleVSRRecording();
   });
 
+  // Help overlay (Ctrl+Shift+H / Cmd+Shift+H) — focus trap so tab cannot drift until dismissed
+  const helpOverlay = document.getElementById('help-overlay');
+  const helpPanel = document.getElementById('help-panel');
+  const helpCloseBtn = document.getElementById('help-close');
+  function getHelpFocusables() {
+    if (!helpPanel) return [];
+    return [].slice.call(helpPanel.querySelectorAll('button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'));
+  }
+  function showHelp() {
+    if (helpOverlay) {
+      helpOverlay.classList.add('show');
+      window.electronAPI.sendHelpOpened();
+      requestAnimationFrame(() => { helpCloseBtn?.focus(); });
+    }
+  }
+  function hideHelp() {
+    if (helpOverlay) {
+      helpOverlay.classList.remove('show');
+      window.electronAPI.sendHelpClosed();
+    }
+  }
+  window.electronAPI.onShowHelp(() => showHelp());
+  helpCloseBtn?.addEventListener('click', hideHelp);
+  // Focus trap: keep focus inside help dialog until closed
+  helpOverlay?.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      hideHelp();
+      return;
+    }
+    if (e.key !== 'Tab') return;
+    const focusables = getHelpFocusables();
+    if (focusables.length === 0) return;
+    const first = focusables[0];
+    const last = focusables[focusables.length - 1];
+    const current = document.activeElement;
+    if (e.shiftKey) {
+      if (current === first) {
+        e.preventDefault();
+        last.focus();
+      }
+    } else {
+      if (current === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && helpOverlay?.classList.contains('show')) {
+      e.preventDefault();
+      hideHelp();
+    }
+  });
+
   setTimeout(initializeTracker, 500);
   setTimeout(() => {
     if (!isSpeechActive) {

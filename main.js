@@ -340,6 +340,14 @@ ipcMain.handle('paste-clipboard', async () => {
   }
 });
 
+// Help overlay: when open, capture all input so focus cannot drift
+ipcMain.on('help-opened', () => {
+  if (mainWindow) mainWindow.setIgnoreMouseEvents(false);
+});
+ipcMain.on('help-closed', () => {
+  if (mainWindow) mainWindow.setIgnoreMouseEvents(true, { forward: true });
+});
+
 // IPC handler for moving mouse cursor (system-wide)
 let lastSetPos = null;
 let pauseTrackingUntil = 0;
@@ -593,6 +601,16 @@ app.whenReady().then(() => {
   // Quit the overlay app (Ctrl+Q / Cmd+Q)
   globalShortcut.register('CommandOrControl+Q', () => {
     app.quit();
+  });
+
+  // Help overlay (Ctrl+Shift+H / Cmd+Shift+H) — bring overlay to front and show help
+  globalShortcut.register('CommandOrControl+Shift+H', () => {
+    if (mainWindow) {
+      mainWindow.show();
+      mainWindow.focus();
+      mainWindow.setAlwaysOnTop(true, 'screen-saver');
+      mainWindow.webContents.send('show-help');
+    }
   });
 
   app.on('activate', function () {

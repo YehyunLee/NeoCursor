@@ -21,5 +21,8 @@ contextBridge.exposeInMainWorld('electronAPI', {
   typeText: (text) => ipcRenderer.invoke('type-text', { text }),
   copySelection: () => ipcRenderer.invoke('copy-selection'),
   pasteClipboard: () => ipcRenderer.invoke('paste-clipboard'),
-  onTextModeChanged: (callback) => ipcRenderer.on('text-mode-changed', (event, isTextMode) => callback(isTextMode))
+  onTextModeChanged: (callback) => ipcRenderer.on('text-mode-changed', (event, isTextMode) => callback(isTextMode)),
+  onShowHelp: (callback) => ipcRenderer.on('show-help', callback),
+  sendHelpOpened: () => ipcRenderer.send('help-opened'),
+  sendHelpClosed: () => ipcRenderer.send('help-closed')
 });
