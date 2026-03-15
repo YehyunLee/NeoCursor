@@ -26,6 +26,7 @@ const VSRHandler = require('./vsr-handler');
 const SpeechHandler = require('./speech-handler');
 // Defer loading google-speech-handler (pulls in @google-cloud/speech native bindings) to avoid crash on Windows at startup
 const CursorMonitor = require('./cursor-monitor');
+const CommandProcessor = require('./command-processor');
 logStart('handlers required');
 
 let robot = null;
@@ -55,32 +56,78 @@ if (process.platform === 'win32') {
 // Persistent helper process for fast cursor control without robotjs
 let cursorHelper = null;
 
-function triggerSystemShortcut(action) {
-  const key = action === 'paste' ? 'v' : 'c';
-  const macScript = `tell application "System Events" to keystroke "${key}" using command down`;
+function executeKeyboardAction(action) {
   try {
-    if (!useNativeControl && robot) {
-      const modifier = process.platform === 'darwin' ? 'command' : 'control';
-      robot.keyTap(key, modifier);
-      return true;
+    if (action.type === 'key') {
+      // Simple key press
+      if (!useNativeControl && robot) {
+        robot.keyTap(action.key);
+        return true;
+      }
+
+      if (process.platform === 'darwin') {
+        const keyMap = {
+          'backspace': 'delete',
+          'enter': 'return',
+          'escape': 'escape',
+          'space': 'space',
+          'tab': 'tab',
+          'up': '126', 'down': '125', 'left': '123', 'right': '124',
+          'pageup': '116', 'pagedown': '121', 'home': '115', 'end': '119'
+        };
+        const key = keyMap[action.key] || action.key;
+        const isArrow = ['126', '125', '123', '124', '116', '121', '115', '119'].includes(key);
+        const script = isArrow 
+          ? `tell application "System Events" to key code ${key}`
+          : `tell application "System Events" to keystroke "${key}"`;
+        spawn('osascript', ['-e', script]);
+        return true;
+      }
+
+      if (process.platform === 'linux') {
+        spawn('xdotool', ['key', action.key]);
+        return true;
+      }
+    } else if (action.type === 'shortcut') {
+      // Keyboard shortcut with modifiers
+      if (!useNativeControl && robot) {
+        const modifiers = action.modifiers.map(m => m === 'command' ? (process.platform === 'darwin' ? 'command' : 'control') : m);
+        robot.keyTap(action.key, modifiers);
+        return true;
+      }
+
+      if (process.platform === 'darwin') {
+        const modMap = { 'command': 'command', 'shift': 'shift', 'option': 'option', 'control': 'control' };
+        const mods = action.modifiers.map(m => `${modMap[m] || m} down`).join(', ');
+        const script = `tell application "System Events" to keystroke "${action.key}" using {${mods}}`;
+        spawn('osascript', ['-e', script]);
+        return true;
+      }
+
+      if (process.platform === 'linux') {
+        const modMap = { 'command': 'ctrl', 'shift': 'shift', 'option': 'alt', 'control': 'ctrl' };
+        const mods = action.modifiers.map(m => modMap[m] || m).join('+');
+        spawn('xdotool', ['key', `${mods}+${action.key}`]);
+        return true;
+      }
     }
 
-    if (process.platform === 'darwin') {
-      spawn('osascript', ['-e', macScript]);
-      return true;
-    }
-
-    if (process.platform === 'linux') {
-      spawn('xdotool', ['key', `ctrl+${key}`]);
-      return true;
-    }
-
-    console.warn(`[Shortcut] No implementation for ${action} on platform ${process.platform}`);
+    console.warn(`[KeyboardAction] No implementation for platform ${process.platform}`);
     return false;
   } catch (error) {
-    console.error(`[Shortcut] Failed to ${action}:`, error);
+    console.error(`[KeyboardAction] Failed to execute:`, error);
     return false;
   }
+}
+
+function triggerSystemShortcut(action) {
+  const key = action === 'paste' ? 'v' : 'c';
+  const shortcutAction = {
+    type: 'shortcut',
+    modifiers: ['command'],
+    key: key
+  };
+  return executeKeyboardAction(shortcutAction);
 }
 
 function startCursorHelper() {
@@ -314,6 +361,7 @@ let vsrHandler = null;
 let speechHandler = null;
 let googleSpeechHandler = null;
 let cursorMonitor = null;
+let commandProcessor = null;
 let activeSpeechEngine = 'whisper'; // 'whisper' or 'google'
 
 const initialGoogleKey = process.env.GOOGLE_SPEECH_API_KEY || null;
@@ -694,6 +742,9 @@ app.whenReady().then(() => {
     speechSettings.engine = 'whisper';
   }
   
+  // Initialize command processor
+  commandProcessor = new CommandProcessor();
+  
   // Initialize cursor monitor to detect text input mode
   cursorMonitor = new CursorMonitor();
   cursorMonitor.start((isTextMode) => {
@@ -705,7 +756,33 @@ app.whenReady().then(() => {
   });
   
   const handleTranscript = (text) => {
-    // Type the transcribed text - now handled by unified type-text handler
+    console.log(`[Speech] Received transcript: "${text}"`);
+    
+    // Check if this is a command or regular text
+    const result = commandProcessor.processTranscript(text);
+    console.log(`[Speech] Command detection result:`, {
+      isCommand: result.isCommand,
+      matchedCommand: result.matchedCommand,
+      originalText: result.originalText
+    });
+    
+    if (result.isCommand) {
+      // Execute keyboard action
+      console.log(`[Speech] Executing command: "${result.matchedCommand}" -> action:`, result.action);
+      const success = executeKeyboardAction(result.action);
+      console.log(`[Speech] Command execution ${success ? 'succeeded' : 'failed'}`);
+      if (!success) {
+        console.warn(`[Speech] Command execution failed, typing as text instead`);
+        typeText(text);
+      }
+    } else {
+      // Type as regular text
+      console.log(`[Speech] Not a command, typing as text: "${text}"`);
+      typeText(text);
+    }
+  };
+  
+  const typeText = (text) => {
     try {
       if (useNativeControl) {
         if (process.platform === 'darwin') {
@@ -794,36 +871,29 @@ ipcMain.handle('vsr-add-frame', async (event, { frameData }) => {
 });
 
 ipcMain.handle('vsr-stop-recording', async () => {
+  if (!vsrHandler) return { success: false, error: 'VSR not initialized' };
   try {
-    if (!vsrHandler) {
-      return { success: false, error: 'VSR handler not initialized' };
-    }
     const result = await vsrHandler.stopRecording();
-    return { success: true, result };
+    if (result && result.text) {
+      // Process through command processor or type as text
+      handleTranscript(result.text);
+      return { success: true, text: result.text, confidence: result.confidence };
+    }
+    return { success: false, error: 'No speech detected or recording too short' };
   } catch (error) {
-    console.error('Error stopping VSR recording:', error);
+    console.error('[VSR] Stop recording error:', error);
     return { success: false, error: error.message };
   }
 });
 
-// Speech-to-Text IPC Handlers
 ipcMain.handle('speech-start', async (event, { modelSize }) => {
   try {
-    const engine = speechSettings.engine;
-    
-    if (engine === 'google') {
-      if (!googleSpeechHandler) {
-        return { success: false, error: 'Google Speech handler not initialized. Please set GOOGLE_SPEECH_API_KEY in .env' };
-      }
-      activeSpeechEngine = 'google';
-      return googleSpeechHandler.start();
-    } else {
-      if (!speechHandler) {
-        return { success: false, error: 'Speech handler not initialized' };
-      }
-      activeSpeechEngine = 'whisper';
-      return speechHandler.start(modelSize || speechSettings.whisperModel);
+    if (activeSpeechEngine === 'google' && googleSpeechHandler) {
+      await googleSpeechHandler.start();
+    } else if (activeSpeechEngine === 'whisper' && speechHandler) {
+      await speechHandler.start(modelSize || speechSettings.whisperModel);
     }
+    return { success: true };
   } catch (error) {
     console.error('Error starting speech:', error);
     return { success: false, error: error.message };
@@ -833,11 +903,11 @@ ipcMain.handle('speech-start', async (event, { modelSize }) => {
 ipcMain.handle('speech-stop', async () => {
   try {
     if (activeSpeechEngine === 'google' && googleSpeechHandler) {
-      return googleSpeechHandler.stop();
+      await googleSpeechHandler.stop();
     } else if (activeSpeechEngine === 'whisper' && speechHandler) {
-      return speechHandler.stop();
+      await speechHandler.stop();
     }
-    return { success: false, error: 'No active speech handler' };
+    return { success: true };
   } catch (error) {
     console.error('Error stopping speech:', error);
     return { success: false, error: error.message };
@@ -864,6 +934,16 @@ ipcMain.handle('type-text', async (event, { text }) => {
   try {
     if (!text) return { success: false, error: 'No text provided' };
     
+    // Check if this is a command
+    const result = commandProcessor.processTranscript(text);
+    
+    if (result.isCommand) {
+      console.log(`[TypeText] Executing command: ${result.matchedCommand}`);
+      const success = executeKeyboardAction(result.action);
+      return { success, isCommand: true, matchedCommand: result.matchedCommand };
+    }
+    
+    // Type as regular text
     if (useNativeControl) {
       if (process.platform === 'darwin') {
         // Use AppleScript to type on macOS
@@ -881,7 +961,7 @@ ipcMain.handle('type-text', async (event, { text }) => {
       robot.typeString(text);
       console.log('[Type] Typed via robotjs:', text);
     }
-    return { success: true };
+    return { success: true, isCommand: false };
   } catch (error) {
     console.error('[Type] Error typing text:', error);
     return { success: false, error: error.message };
