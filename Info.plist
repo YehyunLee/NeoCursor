@@ -3,7 +3,7 @@
 <plist version="1.0">
 <dict>
     <key>NSCameraUsageDescription</key>
-    <string>SilentCursor needs camera access for eye tracking to control your cursor</string>
+    <string>NeoCursor needs camera access for head and eye tracking to control your cursor</string>
     <key>NSCameraUseContinuityCameraDeviceType</key>
     <true/>
 </dict>

@@ -1,7 +1,7 @@
 {
-  "name": "silentcursor",
+  "name": "neocursor",
   "version": "1.0.0",
-  "description": "Control your computer with eye movement and silent speech - hands-free computing for macOS and Windows",
+  "description": "Control your computer with head tracking and eye-based gestures - hands-free computing for macOS and Windows",
   "main": "main.js",
   "scripts": {
     "start": "electron .",
@@ -14,18 +14,18 @@
   },
   "repository": {
     "type": "git",
-    "url": "git+https://github.com/YehyunLee/SilentCursor.git"
+    "url": "git+https://github.com/YehyunLee/NeoCursor.git"
   },
   "keywords": [],
   "author": "Thomas and Amy",
   "license": "ISC",
   "bugs": {
-    "url": "https://github.com/YehyunLee/SilentCursor/issues"
+    "url": "https://github.com/YehyunLee/NeoCursor/issues"
   },
-  "homepage": "https://github.com/YehyunLee/SilentCursor#readme",
+  "homepage": "https://github.com/YehyunLee/NeoCursor#readme",
   "build": {
-    "appId": "com.silentcursor.app",
-    "productName": "SilentCursor",
+    "appId": "com.neocursor.app",
+    "productName": "NeoCursor",
     "directories": { "output": "dist" },
     "win": {
       "target": [{ "target": "nsis", "arch": ["x64"] }],
@@ -40,7 +40,7 @@
       "target": ["dmg", "zip"],
       "icon": null,
       "extendInfo": {
-        "NSCameraUsageDescription": "SilentCursor needs camera access for eye tracking to control your cursor",
+        "NSCameraUsageDescription": "NeoCursor needs camera access for head and eye tracking to control your cursor",
         "NSCameraUseContinuityCameraDeviceType": true
       }
     },
