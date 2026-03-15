@@ -28,7 +28,9 @@ try {
 let cursorHelper = null;
 
 function startCursorHelper() {
-  if (!useNativeControl) return;
+  // On macOS, always start the Python helper for scrolling (robotjs scroll doesn't work well)
+  // On other platforms, only start if useNativeControl is true
+  if (!useNativeControl && process.platform !== 'darwin') return;
 
   if (process.platform === 'win32') {
     // MOUSEEVENTF_WHEEL=0x0800, MOUSEEVENTF_HWHEEL=0x1000; amount in cButtons (120 = one notch)
@@ -74,8 +76,54 @@ function startCursorHelper() {
   } else if (process.platform === 'linux') {
     // xdotool is fast enough per-call, but we can still batch
     cursorHelper = { platform: 'linux' };
+  } else if (process.platform === 'darwin') {
+    // macOS: Use Python Quartz script for reliable scrolling
+    const scriptPath = path.join(__dirname, 'mouse_control.py');
+    // Use absolute path to python3 to avoid PATH issues in Electron
+    // Using -u for unbuffered I/O
+    const pythonPath = '/Library/Frameworks/Python.framework/Versions/3.12/bin/python3';
+    
+    console.log(`[CursorHelper] Spawning ${pythonPath} with script: ${scriptPath}`);
+    
+    const setupHelperListeners = (helper) => {
+      helper.stdout.on('data', (data) => {
+        console.log(`[CursorHelper Out]: ${data}`);
+      });
+      
+      helper.stderr.on('data', (data) => {
+        console.error(`[CursorHelper Error]: ${data}`);
+      });
+      
+      helper.on('close', (code) => {
+        console.log(`Cursor helper exited with code ${code}`);
+        if (cursorHelper === helper) {
+          cursorHelper = null;
+        }
+      });
+    };
+
+    try {
+      cursorHelper = spawn(pythonPath, ['-u', scriptPath]);
+      setupHelperListeners(cursorHelper);
+      
+      cursorHelper.on('error', (err) => {
+        console.error('[CursorHelper] Failed to start subprocess with absolute path:', err);
+        if (err.code === 'ENOENT') {
+          console.log('[CursorHelper] Retrying with "python3" from PATH...');
+          cursorHelper = spawn('python3', ['-u', scriptPath]);
+          setupHelperListeners(cursorHelper);
+          
+          cursorHelper.on('error', (err2) => {
+             console.error('[CursorHelper] Failed to start subprocess with PATH python3:', err2);
+          });
+        }
+      });
+    } catch (e) {
+      console.error('[CursorHelper] Exception during spawn:', e);
+    }
+    
+    console.log('Started Python cursor helper (macOS Quartz)');
   }
-  // macOS with robotjs failing is rare; osascript per-call is acceptable
 }
 
 function sendCursorMove(x, y) {
@@ -93,40 +141,13 @@ function sendCursorMove(x, y) {
 function sendScroll(dx, dy) {
   if (cursorHelper && cursorHelper.stdin) {
     cursorHelper.stdin.write(`SCROLL ${dx} ${dy}\n`);
-  } else if (process.platform === 'darwin') {
-    // macOS: Use AppleScript to simulate scroll wheel events
-    // Positive dy = scroll up, negative = scroll down
-    const scrollAmount = Math.round(dy / 30); // Convert to scroll units
-    const script = `
-      tell application "System Events"
-        tell (first application process whose frontmost is true)
-          set frontApp to name
-        end tell
-        tell process frontApp
-          key code 125 using {shift down} -- Simulate scroll
-        end tell
-      end tell
-    `;
-    
-    // Use a simpler approach: send arrow key events for scrolling
-    if (dy > 0) {
-      // Scroll up - send up arrow multiple times
-      for (let i = 0; i < 3; i++) {
-        spawn('osascript', ['-e', 'tell application "System Events" to key code 126']);
-      }
-    } else if (dy < 0) {
-      // Scroll down - send down arrow multiple times
-      for (let i = 0; i < 3; i++) {
-        spawn('osascript', ['-e', 'tell application "System Events" to key code 125']);
-      }
-    }
-    console.log(`[Scroll] macOS scroll: dy=${dy}`);
   } else if (process.platform === 'linux') {
     if (dy > 0) spawn('xdotool', ['click', '4']);  // scroll up
     if (dy < 0) spawn('xdotool', ['click', '5']);  // scroll down
     if (dx > 0) spawn('xdotool', ['click', '7']);  // scroll right
     if (dx < 0) spawn('xdotool', ['click', '6']);  // scroll left
   }
+  // macOS scroll is handled by robotjs in the scroll IPC handler
 }
 
 function sendCursorClick(button) {
@@ -315,10 +336,36 @@ ipcMain.handle('mouse-up', async (event, { button = 'left' }) => {
 // IPC handler for scrolling (dx = horizontal, dy = vertical; positive dy = scroll up)
 ipcMain.handle('scroll', async (event, { dx, dy }) => {
   try {
-    if (useNativeControl) {
-      sendScroll(Math.round(dx), Math.round(dy));
+    if (process.platform === 'darwin') {
+      // Use our Python script for reliable scrolling on macOS
+      if (cursorHelper && cursorHelper.stdin && !cursorHelper.killed) {
+        // Send scroll command to python helper
+        // Python helper expects: SCROLL dx dy
+        cursorHelper.stdin.write(`SCROLL ${dx} ${dy}\n`);
+      } else {
+        // Fallback or restart helper?
+        const now = Date.now();
+        if (!global.lastHelperRestart || now - global.lastHelperRestart > 2000) {
+           console.warn('Cursor helper not running, restarting...');
+           global.lastHelperRestart = now;
+           startCursorHelper();
+        }
+        
+        // Try once after short delay
+        setTimeout(() => {
+          if (cursorHelper && cursorHelper.stdin) {
+            cursorHelper.stdin.write(`SCROLL ${dx} ${dy}\n`);
+          }
+        }, 100);
+      }
     } else if (robot) {
-      robot.scrollMouse(0, Math.round(dy / 120));
+      // robotjs scrollMouse: positive = scroll down, negative = scroll up
+      // Our convention: positive dy = scroll up, so we need to negate
+      const scrollAmount = Math.round(-dy / 30); // Convert and invert
+      robot.scrollMouse(Math.round(dx / 30), scrollAmount);
+      console.log(`[Scroll] robotjs scroll: dx=${dx}, dy=${dy}, amount=${scrollAmount}`);
+    } else if (useNativeControl) {
+      sendScroll(Math.round(dx), Math.round(dy));
     }
     return { success: true };
   } catch (error) {
