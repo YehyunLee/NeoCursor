@@ -20,11 +20,11 @@ app.get('/', (req, res) => {
 });
 
 const fs = require('fs');
-const startupLog = path.join(__dirname, 'silentcursor-startup.log');
+const startupLog = path.join(__dirname, 'neocursor-startup.log');
 const server = app.listen(PORT, () => {
   const msg = `Server running at http://localhost:${PORT}`;
   try { fs.appendFileSync(startupLog, `[${new Date().toISOString()}] ${msg}\n`); } catch (_) {}
-  process.stderr.write(`[SilentCursor] ${msg}\n`);
+  process.stderr.write(`[NeoCursor] ${msg}\n`);
 });
 
 module.exports = server;
