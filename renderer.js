@@ -27,14 +27,14 @@ let speechSettings = {
   whisperModel: 'base',
   googleAvailable: false
 };
-const VAD_START_THRESHOLD = 0.018;
-const VAD_SILENCE_TIMEOUT_MS = 1400;
+const VAD_START_THRESHOLD = 0.012; // More sensitive voice trigger
+const VAD_SILENCE_TIMEOUT_MS = 2600; // Allow longer pause mid sentence
 let vadIsSpeaking = false;
 let lastVoiceDetected = 0;
 let speechEngineRunning = false;
 let speechEngineStarting = false;
 let lastSpeechEngineUseTime = 0;
-const SPEECH_ENGINE_IDLE_TIMEOUT_MS = 20000;
+const SPEECH_ENGINE_IDLE_TIMEOUT_MS = 90000; // Keep engine alive longer
 let speechEngineStopping = false;
 
 // Head tracking state (default 15 - synced with Control Panel)

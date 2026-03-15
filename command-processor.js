@@ -3,12 +3,21 @@ class CommandProcessor {
     this.commandMap = {
       // Deletion commands
       'delete': { type: 'key', key: 'backspace' },
+      'delete everything': { type: 'key', key: 'backspace' },
+      'delete all': { type: 'key', key: 'backspace' },
+      'clear': { type: 'key', key: 'backspace' },
+      'clear all': { type: 'key', key: 'backspace' },
       'backspace': { type: 'key', key: 'backspace' },
       'remove': { type: 'key', key: 'backspace' },
+      'remove all': { type: 'key', key: 'backspace' },
       
       // Selection commands
       'select all': { type: 'shortcut', modifiers: ['command'], key: 'a' },
       'select everything': { type: 'shortcut', modifiers: ['command'], key: 'a' },
+      'highlight everything': { type: 'shortcut', modifiers: ['command'], key: 'a' },
+      'highlight all': { type: 'shortcut', modifiers: ['command'], key: 'a' },
+      'select r': { type: 'shortcut', modifiers: ['command'], key: 'a' },
+      'select or': { type: 'shortcut', modifiers: ['command'], key: 'a' },
       
       // Navigation
       'enter': { type: 'key', key: 'enter' },
@@ -53,7 +62,7 @@ class CommandProcessor {
     };
     
     // Maximum word count to consider as a command (not a sentence)
-    this.maxCommandWords = 3;
+    this.maxCommandWords = 4;
     
     // Minimum confidence threshold for command detection
     this.minConfidence = 0.6;
@@ -71,48 +80,38 @@ class CommandProcessor {
     
     const normalized = text.toLowerCase().trim();
     
-    // Remove punctuation for command matching
-    const cleanText = normalized.replace(/[.,!?;:]/g, '').trim();
+    // Remove punctuation/hyphens for command matching
+    const cleanText = normalized
+      .replace(/[\-_/]/g, ' ')
+      .replace(/[.,!?;:]/g, ' ')
+      .replace(/\s+/g, ' ')
+      .trim();
+    
+    if (!cleanText) {
+      return { isCommand: false, action: null, originalText: text };
+    }
     
     // Get unique words (in case of repetition like "enter enter")
     const words = cleanText.split(/\s+/).filter(w => w.length > 0);
     const uniqueWords = [...new Set(words)];
     
-    // If all words are the same (repeated command), use just one
-    const testText = uniqueWords.length === 1 ? uniqueWords[0] : cleanText;
+    // Prefer single word when everything is repeated ("enter enter")
+    const repeatedCandidate = uniqueWords.length === 1 ? uniqueWords[0] : null;
     
-    // Count unique words for length check
-    const wordCount = uniqueWords.length;
+    const match = this.matchCommand(cleanText) ||
+      (repeatedCandidate ? this.matchCommand(repeatedCandidate) : null) ||
+      this.findCommandInWords(words);
     
-    // If it's too long, it's probably not a command
-    if (wordCount > this.maxCommandWords) {
-      return { isCommand: false, action: null, originalText: text };
-    }
-    
-    // Check for exact command match
-    if (this.commandMap[testText]) {
-      console.log(`[CommandProcessor] Detected command: "${testText}"`);
+    if (match) {
+      console.log(`[CommandProcessor] Detected command: "${match}"`);
       return {
         isCommand: true,
-        action: this.commandMap[testText],
+        action: this.commandMap[match],
         originalText: text,
-        matchedCommand: testText
+        matchedCommand: match
       };
     }
     
-    // Check for partial matches (fuzzy matching for common variations)
-    const fuzzyMatch = this.findFuzzyMatch(testText);
-    if (fuzzyMatch) {
-      console.log(`[CommandProcessor] Fuzzy matched: "${testText}" -> "${fuzzyMatch}"`);
-      return {
-        isCommand: true,
-        action: this.commandMap[fuzzyMatch],
-        originalText: text,
-        matchedCommand: fuzzyMatch
-      };
-    }
-    
-    // Not a command, return as regular text
     return { isCommand: false, action: null, originalText: text };
   }
   
@@ -129,6 +128,12 @@ class CommandProcessor {
       'ctrl a': 'select all',
       'control a': 'select all',
       'command a': 'select all',
+      'ctrl-a': 'select all',
+      'control-a': 'select all',
+      'command-a': 'select all',
+      'select r': 'select all',
+      'select or': 'select all',
+      'contrary a': 'select all',
       'ctrl c': 'copy',
       'control c': 'copy',
       'command c': 'copy',
@@ -162,6 +167,35 @@ class CommandProcessor {
       }
     }
     
+    return null;
+  }
+
+  matchCommand(text) {
+    if (!text) return null;
+    if (this.commandMap[text]) {
+      return text;
+    }
+    const fuzzy = this.findFuzzyMatch(text);
+    if (fuzzy) {
+      return fuzzy;
+    }
+    return null;
+  }
+
+  findCommandInWords(words) {
+    if (!words || words.length === 0) {
+      return null;
+    }
+    const maxWindow = Math.min(this.maxCommandWords, words.length);
+    for (let window = maxWindow; window >= 1; window--) {
+      for (let i = 0; i <= words.length - window; i++) {
+        const phrase = words.slice(i, i + window).join(' ');
+        const match = this.matchCommand(phrase);
+        if (match) {
+          return match;
+        }
+      }
+    }
     return null;
   }
   
