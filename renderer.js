@@ -61,7 +61,7 @@ let mouseControlUnavailableShown = false;
 
 // Scroll mode: hold Z to scroll instead of moving cursor
 let scrollMode = false;
-const SCROLL_SENSITIVITY = 600;
+const SCROLL_SENSITIVITY = 35;
 
 // Non-linear acceleration: small head movements = precision, large = fast jumps
 function accelerate(delta) {
@@ -336,14 +336,14 @@ function triggerGazeAction(zone) {
   switch(zone) {
     case 'top':
       // Scroll up
-      window.electronAPI.scroll(0, 360);
+      window.electronAPI.scroll(0, 15);
       updateStatus(statusElements.scroll, 'Scrolling Up', '#4ecca3');
       showActionFeedback('SCROLL ▲', 'scroll');
       setTimeout(() => updateStatus(statusElements.scroll, 'Move to scroll', '#a0a0a0'), 500);
       break;
     case 'bottom':
       // Scroll down
-      window.electronAPI.scroll(0, -360);
+      window.electronAPI.scroll(0, -15);
       updateStatus(statusElements.scroll, 'Scrolling Down', '#4ecca3');
       showActionFeedback('SCROLL ▼', 'scroll');
       setTimeout(() => updateStatus(statusElements.scroll, 'Move to scroll', '#a0a0a0'), 500);
